@@ -1,0 +1,36 @@
+{
+  "form_response_url": "https://docs.google.com/forms/d/e/1FAIpQLScTqX0Lz4l1Yh2STGx-S_64yw5TYYlrQ4KQxrYXORsEBlX24w/formResponse",
+  "output_file": "responses.json",
+  "strategy_file": "STRATEGY.md",
+  "model": "gpt-4.1",
+  "personas": [
+    {"code": "A", "name": "Świadomy Specjalista",                       "count": 18},
+    {"code": "B", "name": "Przeciętny Pracownik Biurowy",               "count": 28},
+    {"code": "C", "name": "Pracownik z Małej Miejscowości",             "count": 20},
+    {"code": "D", "name": "Senior z Doświadczeniem",                    "count": 14},
+    {"code": "E", "name": "Młody Entuzjasta",                           "count": 12},
+    {"code": "F", "name": "Pracownik Sektora Publicznego z Wiedzą KSC", "count":  8}
+  ],
+  "questions": [
+    {"id": "Q1",  "entry_id": "entry.1223506545", "type": "radio"},
+    {"id": "Q2",  "entry_id": "entry.1942252282", "type": "radio"},
+    {"id": "Q3",  "entry_id": "entry.1905423568", "type": "radio"},
+    {"id": "Q4",  "entry_id": "entry.1983749556", "type": "radio"},
+    {"id": "Q5",  "entry_id": "entry.742126363",  "type": "radio"},
+    {"id": "Q6",  "entry_id": "entry.441848207",  "type": "radio"},
+    {"id": "Q7",  "entry_id": "entry.2004769140", "type": "checkbox"},
+    {"id": "Q8",  "entry_id": "entry.342350116",  "type": "radio"},
+    {"id": "Q9",  "entry_id": "entry.938373020",  "type": "radio"},
+    {"id": "Q10", "entry_id": "entry.1478590826", "type": "checkbox"},
+    {"id": "Q11", "entry_id": "entry.938208733",  "type": "radio"},
+    {"id": "Q12", "entry_id": "entry.1500003085", "type": "radio"},
+    {"id": "Q13", "entry_id": "entry.684137257",  "type": "radio"},
+    {"id": "Q14", "entry_id": "entry.1169750823", "type": "radio"},
+    {"id": "Q15", "entry_id": "entry.100867800",  "type": "radio"},
+    {"id": "Q16", "entry_id": "entry.1906427002", "type": "radio"},
+    {"id": "Q17", "entry_id": "entry.398179910",  "type": "radio"},
+    {"id": "Q18", "entry_id": "entry.1808091593", "type": "scale"},
+    {"id": "Q19", "entry_id": "entry.708444986",  "type": "radio"},
+    {"id": "Q20", "entry_id": "entry.413783070",  "type": "scale"}
+  ]
+}
