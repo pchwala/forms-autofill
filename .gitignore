@@ -1,2 +1,2 @@
 .venv/
-shuffled_responses.json
+*.json

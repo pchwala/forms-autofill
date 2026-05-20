@@ -108,7 +108,12 @@ class ResponseGenerator:
             print(f"  Got {len(batch)} responses.")
             all_responses.extend(batch)
 
-        dest = pathlib.Path(output_file or config.get("output_file", "responses.json"))
+        if output_file is not None:
+            dest = pathlib.Path(output_file)
+        else:
+            base = pathlib.Path(config.get("output_file", "data/responses.json"))
+            dest = _next_numbered_path(base)
+        dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(
             json.dumps(all_responses, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -117,8 +122,18 @@ class ResponseGenerator:
         return all_responses
 
 
+def _next_numbered_path(base: pathlib.Path) -> pathlib.Path:
+    """Return the first non-existing path of the form <stem>_N<suffix>."""
+    n = 1
+    while True:
+        candidate = base.parent / f"{base.stem}_{n}{base.suffix}"
+        if not candidate.exists():
+            return candidate
+        n += 1
+
+
 def main() -> None:
-    config_path = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "form_config.json")
+    config_path = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "data/form_config.json")
     output_file = sys.argv[2] if len(sys.argv) > 2 else None
     config = json.loads(config_path.read_text(encoding="utf-8"))
     ResponseGenerator(config).generate(output_file=output_file)
