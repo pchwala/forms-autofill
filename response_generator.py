@@ -17,8 +17,54 @@ class ResponseGenerator:
         self._config = config
         self._client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+    def _get_conditional_question_ids(self) -> set[str]:
+        """Return all question IDs that may be skipped due to routing conditions."""
+        skipped: set[str] = set()
+        for rule in self._config.get("routing", []):
+            for cond in rule["conditions"]:
+                skipped.update(cond.get("skipped_question_ids", []))
+        return skipped
+
+    def _build_routing_text(self) -> str:
+        """Generate a human-readable block describing all form routing rules."""
+        routing = self._config.get("routing", [])
+        if not routing:
+            return ""
+
+        lines = [
+            "FORM ROUTING RULES (CRITICAL — violations make responses impossible to submit):",
+            "Whenever a routing rule applies, set the skipped questions to JSON null.",
+        ]
+        for rule in routing:
+            lines.append(f"\nQuestion {rule['question_id']} — \"{rule['label']}\":")
+            for cond in rule["conditions"]:
+                val = cond["value"]
+                go_to = cond["go_to"]
+                skipped = cond.get("skipped_question_ids", [])
+
+                if go_to == "submit":
+                    lines.append(f"  \u2022 Answer \"{val}\" \u2192 FORM ENDS IMMEDIATELY.")
+                    if skipped:
+                        lines.append(
+                            f"    The following questions MUST be null: {skipped}"
+                        )
+                elif go_to is None or go_to == "next_page":
+                    lines.append(
+                        f"  \u2022 Answer \"{val}\" \u2192 normal flow "
+                        "(all subsequent questions apply)."
+                    )
+                else:
+                    lines.append(f"  \u2022 Answer \"{val}\" \u2192 jump to {go_to}.")
+                    if skipped:
+                        lines.append(
+                            f"    The following questions are SKIPPED "
+                            f"and MUST be null: {skipped}"
+                        )
+        return "\n".join(lines)
+
     def _build_response_schema(self) -> str:
         questions = self._config["questions"]
+        conditional_ids = self._get_conditional_question_ids()
         lines = [
             "Each response object must follow this exact JSON schema:",
             "",
@@ -27,12 +73,26 @@ class ResponseGenerator:
         ]
         for q in questions:
             qid = q["id"]
+            nullable = qid in conditional_ids
+            suffix = "  // null when routing skips this question" if nullable else ""
             if q["type"] == "checkbox":
-                lines.append(f'  "{qid}": ["<one or more strings from allowed options>"],')
+                lines.append(
+                    f'  "{qid}": ["<one or more strings from allowed options>"] or null,{suffix}'
+                    if nullable
+                    else f'  "{qid}": ["<one or more strings from allowed options>"],'
+                )
             elif q["type"] == "scale":
-                lines.append(f'  "{qid}": <integer>,')
+                lines.append(
+                    f'  "{qid}": <integer> or null,{suffix}'
+                    if nullable
+                    else f'  "{qid}": <integer>,'
+                )
             else:
-                lines.append(f'  "{qid}": "<single string — one of the allowed options>",')
+                lines.append(
+                    f'  "{qid}": "<single string — one of the allowed options>" or null,{suffix}'
+                    if nullable
+                    else f'  "{qid}": "<single string — one of the allowed options>",'
+                )
         lines[-1] = lines[-1].rstrip(",")  # remove trailing comma on last field
         lines.append("}")
 
@@ -53,16 +113,23 @@ class ResponseGenerator:
             "- All option strings MUST exactly match the option text "
             "listed in §1 of the strategy document."
         )
+        if conditional_ids:
+            rules.append(
+                "- Questions marked 'or null' MUST be JSON null (not absent, not empty string) "
+                "when a routing rule skips them."
+            )
         return "\n".join(lines + rules)
 
     def _build_system_prompt(self, strategy_text: str) -> str:
+        routing_text = self._build_routing_text()
         return (
             "You are a survey response generator.\n\n"
             "STRATEGY DOCUMENT (follow it strictly):\n"
             "========================================\n"
             + strategy_text
             + "\n========================================\n\n"
-            "RESPONSE OBJECT SCHEMA:\n"
+            + (routing_text + "\n\n" if routing_text else "")
+            + "RESPONSE OBJECT SCHEMA:\n"
             + self._build_response_schema()
         )
 

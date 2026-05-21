@@ -28,6 +28,9 @@ GOOGLE_TYPE_MAP: dict[int, str] = {
 # Types where an "options" field is not meaningful / not included in output.
 FREE_TEXT_TYPES = {"text", "textarea", "date", "time"}
 
+# Google Forms internal type_id for section/page dividers.
+_SECTION_TYPE = 8
+
 
 def _next_config_path(data_dir: pathlib.Path) -> pathlib.Path:
     """Return data/form_config_N.json where N is the next available number."""
@@ -75,24 +78,43 @@ def _derive_response_url(form_url: str) -> str:
     return base.replace("viewform", "formResponse")
 
 
-def _extract_questions(fb_data: list) -> tuple[str, list[dict]]:
-    """Parse FB_PUBLIC_LOAD_DATA_ and return (form_title, questions).
+def _extract_structure(
+    fb_data: list,
+) -> tuple[str, list[dict], list[dict], list[dict]]:
+    """Parse FB_PUBLIC_LOAD_DATA_ and return (form_title, pages, questions, routing).
 
     FB_PUBLIC_LOAD_DATA_ structure (top-level):
       [version, form_descriptor, ...]
 
     form_descriptor:
-      [form_id, items, null, ..., form_title, description, ...]
+      [form_id, items, null, ..., form_title, ...]
         index:    0      1              8
 
     Each item in items:
       [item_id, title, description, type_id, response_groups, ...]
 
-    Each response_group (first one carries the entry info for single-field questions):
+    Section dividers (type_id == 8) separate pages; they carry no response data.
+
+    Each response_group (first group carries entry info for single-field questions):
       [entry_id, options, required, ...]
 
     Each option:
-      [option_text, ...]
+      [option_text, extra, go_to, extra, flag]
+      where go_to at index [2]:
+        None / 0  → normal flow (no special routing)
+        -2        → go to next page
+        -3        → submit form immediately (terminal)
+        <int>     → jump to section whose item_id equals this value
+
+    Returns:
+        form_title  – string title of the form
+        pages       – ordered list of page dicts (id, section_id, title,
+                      description, question_ids)
+        questions   – ordered list of question dicts (same schema as before,
+                      each with an added "page" field)
+        routing     – list of routing-rule dicts for questions that have
+                      conditional navigation; each condition carries
+                      skipped_question_ids (computed by _compute_routing_skips)
     """
     try:
         form_descriptor: list = fb_data[1]
@@ -107,58 +129,181 @@ def _extract_questions(fb_data: list) -> tuple[str, list[dict]]:
     if len(form_descriptor) > 1 and isinstance(form_descriptor[1], list):
         raw_items = form_descriptor[1]
 
-    questions: list[dict] = []
-    q_index = 1
+    # ── Pass 1: separate raw items into pages using section dividers ───────────
+    # Each "page" is a (section_info_dict, [item, ...]) pair.
+    raw_pages: list[tuple[dict, list]] = []
+    cur_section: dict = {"section_id": None, "title": "", "description": ""}
+    cur_items: list = []
 
     for item in raw_items:
         if not isinstance(item, list) or len(item) < 4:
             continue
+        if item[3] == _SECTION_TYPE:
+            raw_pages.append((cur_section, cur_items))
+            cur_section = {
+                "section_id": item[0],
+                "title": str(item[1]) if item[1] else "",
+                "description": str(item[2]) if len(item) > 2 and item[2] else "",
+            }
+            cur_items = []
+        else:
+            cur_items.append(item)
+    raw_pages.append((cur_section, cur_items))  # flush final page
 
-        type_id: int = item[3]
-        config_type = GOOGLE_TYPE_MAP.get(type_id)
+    # Map section_id (item[0] of a type-8 item) → page index, for jump resolution.
+    section_to_page_idx: dict[int, int] = {
+        sec["section_id"]: idx
+        for idx, (sec, _) in enumerate(raw_pages)
+        if sec["section_id"] is not None
+    }
 
-        # Skip section dividers (not in map) and grid questions (need special handling).
-        if config_type is None or config_type == "grid":
-            continue
+    # ── Pass 2: extract questions, page assignments, and option routing ─────────
+    pages: list[dict] = []
+    questions: list[dict] = []
+    routing: list[dict] = []
+    q_index = 1
 
-        response_groups: list = (
-            item[4] if len(item) > 4 and isinstance(item[4], list) else []
-        )
-        if not response_groups:
-            continue
+    for page_idx, (sec_info, items) in enumerate(raw_pages):
+        page_id = f"page_{page_idx + 1}"
+        q_ids_in_page: list[str] = []
 
-        # The first response group holds the entry ID, options, and required flag.
-        group = response_groups[0]
-        if not isinstance(group, list) or len(group) < 1:
-            continue
+        for item in items:
+            type_id: int = item[3]
+            config_type = GOOGLE_TYPE_MAP.get(type_id)
+            if config_type is None or config_type == "grid":
+                continue
 
-        entry_id_num = group[0]
-        raw_options: list = (
-            group[1] if len(group) > 1 and isinstance(group[1], list) else []
-        )
-        required_flag = bool(group[2]) if len(group) > 2 and group[2] else False
+            response_groups: list = (
+                item[4] if len(item) > 4 and isinstance(item[4], list) else []
+            )
+            if not response_groups:
+                continue
 
-        options = [
-            str(opt[0])
-            for opt in raw_options
-            if isinstance(opt, list) and opt and opt[0] is not None
-        ]
+            group = response_groups[0]
+            if not isinstance(group, list) or len(group) < 1:
+                continue
 
-        question: dict = {
-            "id": f"Q{q_index}",
-            "label": str(item[1]) if item[1] else "",
-            "entry_id": f"entry.{entry_id_num}",
-            "type": config_type,
-            "required": required_flag,
+            entry_id_num = group[0]
+            raw_options: list = (
+                group[1] if len(group) > 1 and isinstance(group[1], list) else []
+            )
+            required_flag = bool(group[2]) if len(group) > 2 and group[2] else False
+
+            q_id = f"Q{q_index}"
+            options_plain: list[str] = []
+            option_routing: list[dict] = []
+            has_routing = False
+
+            for opt in raw_options:
+                if not isinstance(opt, list) or not opt or opt[0] is None:
+                    continue
+                opt_text = str(opt[0])
+                options_plain.append(opt_text)
+
+                # Index [2] of each option encodes the go-to target.
+                go_to_raw = opt[2] if len(opt) > 2 else None
+                if go_to_raw is None or go_to_raw == 0:
+                    go_to = None
+                elif go_to_raw == -2:
+                    go_to = "next_page"
+                    has_routing = True
+                elif go_to_raw == -3:
+                    go_to = "submit"
+                    has_routing = True
+                else:
+                    # Positive int: jump to the section whose item_id equals go_to_raw.
+                    target_idx = section_to_page_idx.get(go_to_raw)
+                    go_to = (
+                        f"page_{target_idx + 1}"
+                        if target_idx is not None
+                        else f"section:{go_to_raw}"
+                    )
+                    has_routing = True
+
+                option_routing.append({"value": opt_text, "go_to": go_to})
+
+            question: dict = {
+                "id": q_id,
+                "label": str(item[1]) if item[1] else "",
+                "entry_id": f"entry.{entry_id_num}",
+                "type": config_type,
+                "required": required_flag,
+                "page": page_id,
+            }
+            if options_plain and config_type not in FREE_TEXT_TYPES:
+                question["options"] = options_plain
+
+            questions.append(question)
+            q_ids_in_page.append(q_id)
+
+            if has_routing:
+                routing.append({
+                    "question_id": q_id,
+                    "entry_id": f"entry.{entry_id_num}",
+                    "label": str(item[1]) if item[1] else "",
+                    "conditions": option_routing,
+                })
+
+            q_index += 1
+
+        page_obj: dict = {
+            "id": page_id,
+            "section_id": sec_info["section_id"],
+            "title": sec_info["title"],
+            "question_ids": q_ids_in_page,
         }
+        if sec_info["description"]:
+            page_obj["description"] = sec_info["description"]
+        pages.append(page_obj)
 
-        if options and config_type not in FREE_TEXT_TYPES:
-            question["options"] = options
+    return form_title, pages, questions, routing
 
-        questions.append(question)
-        q_index += 1
 
-    return form_title, questions
+def _compute_routing_skips(
+    routing: list[dict], pages: list[dict]
+) -> list[dict]:
+    """Augment each routing condition with skipped_question_ids.
+
+    For every option that causes a page jump or form submission, computes which
+    question IDs would be bypassed and stores them on the condition dict.
+    Mutates *routing* in-place and returns it for convenience.
+    """
+    page_idx_map = {p["id"]: i for i, p in enumerate(pages)}
+    q_to_page_id: dict[str, str] = {
+        q_id: p["id"]
+        for p in pages
+        for q_id in p["question_ids"]
+    }
+
+    for rule in routing:
+        q_page_id = q_to_page_id.get(rule["question_id"], "")
+        q_page_idx = page_idx_map.get(q_page_id, 0)
+
+        for cond in rule["conditions"]:
+            go_to = cond["go_to"]
+
+            if go_to is None or go_to == "next_page":
+                cond["skipped_question_ids"] = []
+
+            elif go_to == "submit":
+                # Every question on subsequent pages is skipped.
+                skipped: list[str] = []
+                for p in pages[q_page_idx + 1:]:
+                    skipped.extend(p["question_ids"])
+                cond["skipped_question_ids"] = skipped
+
+            elif go_to.startswith("page_"):
+                # Questions on pages between current+1 and target-1 are skipped.
+                target_idx = page_idx_map.get(go_to, q_page_idx + 1)
+                skipped = []
+                for p in pages[q_page_idx + 1:target_idx]:
+                    skipped.extend(p["question_ids"])
+                cond["skipped_question_ids"] = skipped
+
+            else:
+                cond["skipped_question_ids"] = []
+
+    return routing
 
 
 def extract(
@@ -176,8 +321,15 @@ def extract(
     print(f"Fetching form: {form_url}")
     fb_data = _fetch_form_data(form_url)
 
-    form_title, questions = _extract_questions(fb_data)
-    print(f"Extracted {len(questions)} question(s) from '{form_title}'")
+    form_title, pages, questions, routing = _extract_structure(fb_data)
+    _compute_routing_skips(routing, pages)
+
+    print(
+        f"Extracted {len(questions)} question(s) from '{form_title}' "
+        f"across {len(pages)} page(s)"
+    )
+    if routing:
+        print(f"  Routing rules found on {len(routing)} question(s)")
 
     config = {
         "form_url": form_url,
@@ -187,6 +339,8 @@ def extract(
         "strategy_file": strategy_file,
         "model": model,
         "personas": [],
+        "pages": pages,
+        "routing": routing,
         "questions": questions,
     }
 
