@@ -338,7 +338,6 @@ def extract(
         "output_file": output_file,
         "strategy_file": strategy_file,
         "model": model,
-        "personas": [],
         "pages": pages,
         "routing": routing,
         "questions": questions,
