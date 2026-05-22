@@ -12,17 +12,17 @@ import requests
 
 
 # Maps Google Forms internal type_id to the config schema type string.
-# Section dividers (type 6) are intentionally absent — they are skipped.
+# Section dividers (type 8) are intentionally absent — they are skipped.
 GOOGLE_TYPE_MAP: dict[int, str] = {
     0: "text",      # Short answer
     1: "textarea",  # Paragraph
     2: "radio",     # Multiple choice
-    3: "checkbox",  # Checkboxes
-    4: "dropdown",  # Dropdown
+    3: "dropdown",  # Dropdown
+    4: "checkbox",  # Checkboxes
     5: "scale",     # Linear scale
     7: "grid",      # Multiple choice grid (skipped — needs special handling)
-    8: "date",      # Date
-    9: "time",      # Time
+    9: "date",      # Date
+    10: "time",     # Time
 }
 
 # Types where an "options" field is not meaningful / not included in output.
