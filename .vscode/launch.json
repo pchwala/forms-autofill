@@ -11,6 +11,18 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal"
+        },
+        {
+            "name": "FastAPI",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "backend.main:app",
+                "--reload"
+            ],
+            "jinja": true,
+            "console": "integratedTerminal"
         }
     ]
 }
