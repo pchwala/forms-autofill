@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import pathlib
 import secrets
 import threading
 import uuid
@@ -13,7 +14,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from .orchestrator import run_pipeline
+from .orchestrator import (
+    run_pipeline,
+    step1_extract,
+    step2_strategy,
+    step3_generate,
+    step4_shuffle,
+    step5_submit,
+)
 
 app = FastAPI(title="Forms Autofill API")
 
@@ -26,11 +34,23 @@ app.add_middleware(
 
 _API_KEY = os.getenv("API_KEY", "")
 _jobs: dict[str, dict] = {}
+_sessions: dict[str, dict] = {}
 
 
 def _verify(key: str) -> None:
     if not _API_KEY or not secrets.compare_digest(key.encode(), _API_KEY.encode()):
         raise HTTPException(status_code=401, detail="Invalid API key")
+
+
+def _make_job(loop: asyncio.AbstractEventLoop) -> tuple[str, asyncio.Queue, callable]:
+    job_id = str(uuid.uuid4())
+    queue: asyncio.Queue = asyncio.Queue()
+    _jobs[job_id] = {"status": "running", "queue": queue, "result": None}
+
+    def emit(event: dict) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, event)
+
+    return job_id, queue, emit
 
 
 class RunRequest(BaseModel):
@@ -39,17 +59,17 @@ class RunRequest(BaseModel):
     model: str = "gpt-4.1"
 
 
+class SessionRequest(BaseModel):
+    form_url: str
+    total_responses: int = 100
+    model: str = "gpt-4.1"
+
+
 @app.post("/run")
 async def run(req: RunRequest, x_api_key: str = Header(...)):
     _verify(x_api_key)
-    job_id = str(uuid.uuid4())
-    queue: asyncio.Queue = asyncio.Queue()
-    _jobs[job_id] = {"status": "running", "queue": queue, "result": None}
-
     loop = asyncio.get_running_loop()
-
-    def emit(event: dict) -> None:
-        loop.call_soon_threadsafe(queue.put_nowait, event)
+    job_id, _, emit = _make_job(loop)
 
     def worker() -> None:
         try:
@@ -66,6 +86,94 @@ async def run(req: RunRequest, x_api_key: str = Header(...)):
     return {"job_id": job_id}
 
 
+@app.post("/session")
+async def create_session(req: SessionRequest, x_api_key: str = Header(...)):
+    _verify(x_api_key)
+    session_id = str(uuid.uuid4())
+    _sessions[session_id] = {
+        "form_url": req.form_url,
+        "total_responses": req.total_responses,
+        "model": req.model,
+        "current_step": 0,
+        "status": "idle",
+        "config_path": None,
+        "strategy_path": None,
+        "responses": None,
+    }
+    return {"session_id": session_id}
+
+
+@app.get("/session/{session_id}")
+async def get_session(session_id: str, x_api_key: str = Header(...)):
+    _verify(x_api_key)
+    if session_id not in _sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    s = _sessions[session_id]
+    return {
+        "session_id": session_id,
+        "current_step": s["current_step"],
+        "status": s["status"],
+        "total_steps": 5,
+    }
+
+
+@app.post("/session/{session_id}/advance")
+async def advance_session(session_id: str, x_api_key: str = Header(...)):
+    _verify(x_api_key)
+    if session_id not in _sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    s = _sessions[session_id]
+    if s["status"] == "running":
+        raise HTTPException(status_code=409, detail="Step already running")
+    if s["current_step"] >= 5:
+        raise HTTPException(status_code=409, detail="Pipeline already complete")
+
+    next_step = s["current_step"] + 1
+    s["status"] = "running"
+
+    loop = asyncio.get_running_loop()
+    job_id, _, emit = _make_job(loop)
+
+    def worker() -> None:
+        try:
+            data_dir = pathlib.Path("data")
+            data_dir.mkdir(exist_ok=True)
+
+            if next_step == 1:
+                result = step1_extract(s["form_url"], s["model"], data_dir, emit)
+                s["config_path"] = result
+            elif next_step == 2:
+                result = step2_strategy(s["config_path"], emit)
+                s["strategy_path"] = result
+            elif next_step == 3:
+                result = step3_generate(
+                    s["config_path"], s["strategy_path"], s["total_responses"], emit
+                )
+                s["responses"] = result
+            elif next_step == 4:
+                result = step4_shuffle(s["responses"], emit)
+                s["responses"] = result
+            elif next_step == 5:
+                step5_submit(s["config_path"], s["responses"], emit)
+                result = s["responses"]
+
+            s["current_step"] = next_step
+            s["status"] = "done" if next_step == 5 else "idle"
+            _jobs[job_id]["status"] = "done"
+            _jobs[job_id]["result"] = result if next_step == 5 else None
+            emit({"type": "step_complete", "step": next_step})
+            if next_step == 5:
+                emit({"type": "done", "total": len(s["responses"])})
+        except Exception as exc:
+            s["status"] = "error"
+            _jobs[job_id]["status"] = "error"
+            _jobs[job_id]["error"] = str(exc)
+            emit({"type": "error", "message": str(exc)})
+
+    threading.Thread(target=worker, daemon=True).start()
+    return {"job_id": job_id, "step": next_step}
+
+
 @app.get("/stream/{job_id}")
 async def stream(job_id: str, x_api_key: str = Header(...)):
     _verify(x_api_key)
@@ -77,7 +185,7 @@ async def stream(job_id: str, x_api_key: str = Header(...)):
         while True:
             event = await q.get()
             yield f"data: {json.dumps(event)}\n\n"
-            if event.get("type") in ("done", "error"):
+            if event.get("type") in ("done", "error", "step_complete"):
                 break
 
     return StreamingResponse(generator(), media_type="text/event-stream")
