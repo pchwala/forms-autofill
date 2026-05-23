@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
-const API_KEY = import.meta.env.VITE_API_KEY ?? '';
 
 export type StepStatus = 'pending' | 'active' | 'done';
 export type PipelineStatus = 'idle' | 'running' | 'paused' | 'done' | 'error';
@@ -40,11 +39,14 @@ function makeSteps(): StepInfo[] {
   return STEP_LABELS.map((label) => ({ label, status: 'pending' as StepStatus }));
 }
 
-function authHeaders() {
-  return { 'X-API-Key': API_KEY, 'Content-Type': 'application/json' };
+async function buildHeaders(getToken: () => Promise<string>): Promise<Record<string, string>> {
+  const token = await getToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return headers;
 }
 
-export function usePipeline() {
+export function usePipeline(getToken: () => Promise<string>) {
   const [status, setStatus] = useState<PipelineStatus>('idle');
   const [progress, setProgress] = useState(0);
   const [steps, setSteps] = useState<StepInfo[]>(makeSteps());
@@ -148,10 +150,13 @@ export function usePipeline() {
         const controller = new AbortController();
         esRef.current = { close: () => controller.abort() } as unknown as EventSource;
 
-        fetch(`${API_URL}/stream/${jobId}`, {
-          headers: { 'X-API-Key': API_KEY },
-          signal: controller.signal,
-        })
+        buildHeaders(getToken)
+          .then((hdrs) =>
+            fetch(`${API_URL}/stream/${jobId}`, {
+              headers: hdrs,
+              signal: controller.signal,
+            })
+          )
           .then(async (res) => {
             if (!res.ok || !res.body) throw new Error(`Stream error: ${res.status}`);
             const reader = res.body.getReader();
@@ -214,7 +219,7 @@ export function usePipeline() {
           });
       });
     },
-    [activateStep, animateStep, appendLog, completeStep, snapStep, stopAnimation, stopStream],
+    [activateStep, animateStep, appendLog, completeStep, getToken, snapStep, stopAnimation, stopStream],
   );
 
   // ─── Public actions ─────────────────────────────────────────────────────────
@@ -230,7 +235,7 @@ export function usePipeline() {
 
       const res = await fetch(`${API_URL}/run`, {
         method: 'POST',
-        headers: authHeaders(),
+        headers: await buildHeaders(getToken),
         body: JSON.stringify({ form_url: formUrl, total_responses: totalResponses, model }),
       });
       if (!res.ok) throw new Error(`Failed to start: ${res.status}`);
@@ -252,7 +257,7 @@ export function usePipeline() {
 
       const res = await fetch(`${API_URL}/session`, {
         method: 'POST',
-        headers: authHeaders(),
+        headers: await buildHeaders(getToken),
         body: JSON.stringify({ form_url: formUrl, total_responses: totalResponses, model }),
       });
       if (!res.ok) throw new Error(`Failed to create session: ${res.status}`);
@@ -268,7 +273,7 @@ export function usePipeline() {
 
     const res = await fetch(`${API_URL}/session/${sessionId}/advance`, {
       method: 'POST',
-      headers: authHeaders(),
+      headers: await buildHeaders(getToken),
     });
     if (!res.ok) throw new Error(`Failed to advance: ${res.status}`);
     const { job_id, step } = (await res.json()) as { job_id: string; step: number };

@@ -4,11 +4,12 @@ import asyncio
 import json
 import os
 import pathlib
-import secrets
 import threading
 import uuid
 from typing import AsyncGenerator
 
+import firebase_admin
+from firebase_admin import auth as firebase_auth, credentials
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -32,14 +33,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_API_KEY = os.getenv("API_KEY", "")
+AUTH_DISABLED = os.getenv("AUTH_DISABLED", "false").lower() == "true"
+
+if not AUTH_DISABLED:
+    _creds_json = os.getenv("FIREBASE_CREDENTIALS_JSON")
+    if _creds_json:
+        _cred = credentials.Certificate(json.loads(_creds_json))
+    else:
+        _cred = credentials.ApplicationDefault()
+    firebase_admin.initialize_app(_cred)
+
 _jobs: dict[str, dict] = {}
 _sessions: dict[str, dict] = {}
 
 
-def _verify(key: str) -> None:
-    if not _API_KEY or not secrets.compare_digest(key.encode(), _API_KEY.encode()):
-        raise HTTPException(status_code=401, detail="Invalid API key")
+def _verify(authorization: str) -> None:
+    if AUTH_DISABLED:
+        return
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing Bearer token")
+    token = authorization[len("Bearer "):]
+    try:
+        firebase_auth.verify_id_token(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
 def _make_job(loop: asyncio.AbstractEventLoop) -> tuple[str, asyncio.Queue, callable]:
@@ -66,8 +83,8 @@ class SessionRequest(BaseModel):
 
 
 @app.post("/run")
-async def run(req: RunRequest, x_api_key: str = Header(...)):
-    _verify(x_api_key)
+async def run(req: RunRequest, authorization: str = Header(...)):
+    _verify(authorization)
     loop = asyncio.get_running_loop()
     job_id, _, emit = _make_job(loop)
 
@@ -87,8 +104,8 @@ async def run(req: RunRequest, x_api_key: str = Header(...)):
 
 
 @app.post("/session")
-async def create_session(req: SessionRequest, x_api_key: str = Header(...)):
-    _verify(x_api_key)
+async def create_session(req: SessionRequest, authorization: str = Header(...)):
+    _verify(authorization)
     session_id = str(uuid.uuid4())
     _sessions[session_id] = {
         "form_url": req.form_url,
@@ -104,8 +121,8 @@ async def create_session(req: SessionRequest, x_api_key: str = Header(...)):
 
 
 @app.get("/session/{session_id}")
-async def get_session(session_id: str, x_api_key: str = Header(...)):
-    _verify(x_api_key)
+async def get_session(session_id: str, authorization: str = Header(...)):
+    _verify(authorization)
     if session_id not in _sessions:
         raise HTTPException(status_code=404, detail="Session not found")
     s = _sessions[session_id]
@@ -118,8 +135,8 @@ async def get_session(session_id: str, x_api_key: str = Header(...)):
 
 
 @app.post("/session/{session_id}/advance")
-async def advance_session(session_id: str, x_api_key: str = Header(...)):
-    _verify(x_api_key)
+async def advance_session(session_id: str, authorization: str = Header(...)):
+    _verify(authorization)
     if session_id not in _sessions:
         raise HTTPException(status_code=404, detail="Session not found")
     s = _sessions[session_id]
@@ -175,8 +192,8 @@ async def advance_session(session_id: str, x_api_key: str = Header(...)):
 
 
 @app.get("/stream/{job_id}")
-async def stream(job_id: str, x_api_key: str = Header(...)):
-    _verify(x_api_key)
+async def stream(job_id: str, authorization: str = Header(...)):
+    _verify(authorization)
     if job_id not in _jobs:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -192,8 +209,8 @@ async def stream(job_id: str, x_api_key: str = Header(...)):
 
 
 @app.get("/result/{job_id}")
-async def result(job_id: str, x_api_key: str = Header(...)):
-    _verify(x_api_key)
+async def result(job_id: str, authorization: str = Header(...)):
+    _verify(authorization)
     if job_id not in _jobs:
         raise HTTPException(status_code=404, detail="Job not found")
     job = _jobs[job_id]

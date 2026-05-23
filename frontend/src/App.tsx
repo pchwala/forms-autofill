@@ -9,6 +9,8 @@ import InputForm, { type PipelineMode } from './components/InputForm';
 import PipelineProgress from './components/PipelineProgress';
 import StepLog from './components/StepLog';
 import { usePipeline } from './hooks/usePipeline';
+import { useAuth } from './hooks/useAuth';
+import AuthGuard from './components/AuthGuard';
 
 const STEP_NAMES = [
   'Extract form',
@@ -19,6 +21,7 @@ const STEP_NAMES = [
 ];
 
 export default function App() {
+  const { getToken } = useAuth();
   const {
     status,
     progress,
@@ -30,7 +33,7 @@ export default function App() {
     createSession,
     advanceSession,
     reset,
-  } = usePipeline();
+  } = usePipeline(getToken);
 
   const isIdle = status === 'idle';
   const isRunning = status === 'running';
@@ -62,7 +65,8 @@ export default function App() {
     currentStep < 5 ? STEP_NAMES[currentStep] : null;
 
   return (
-    <Container maxWidth="md" sx={{ py: 6 }}>
+    <AuthGuard>
+      <Container maxWidth="md" sx={{ py: 6 }}>
       <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold' }}>
         Forms Autofill
       </Typography>
@@ -122,5 +126,6 @@ export default function App() {
         <StepLog messages={log} />
       </Paper>
     </Container>
+    </AuthGuard>
   );
 }
