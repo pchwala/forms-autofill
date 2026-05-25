@@ -17,14 +17,6 @@ import { usePipeline } from './hooks/usePipeline';
 import { useAuth } from './hooks/useAuth';
 import AuthGuard from './components/AuthGuard';
 
-const STEP_STATUS_MESSAGES: Record<string, string> = {
-  'Extract form': 'Extracting form...',
-  'Generate strategy': 'Generating strategy...',
-  'Generate responses': 'Generating responses...',
-  'Shuffle responses': 'Shuffling responses...',
-  'Submit responses': 'Submitting responses...',
-};
-
 export default function App() {
   const { getToken } = useAuth();
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -32,6 +24,7 @@ export default function App() {
     status,
     steps,
     log,
+    results,
     error,
     startFullPipeline,
     createSession,
@@ -64,15 +57,6 @@ export default function App() {
       // error state already set inside the hook
     }
   }
-
-  const activeStep = steps.find((s) => s.status === 'active');
-  const statusMessage = activeStep
-    ? (STEP_STATUS_MESSAGES[activeStep.label] ?? `${activeStep.label}...`)
-    : isPaused
-    ? 'Ready for next step.'
-    : isRunning
-    ? 'Running...'
-    : null;
 
   return (
     <AuthGuard>
@@ -115,12 +99,8 @@ export default function App() {
             {/* Stepper */}
             <PipelineProgress steps={steps} />
 
-            {/* Simple status message */}
-            {statusMessage && (
-              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', mt: -1 }}>
-                {statusMessage}
-              </Typography>
-            )}
+            {/* Detailed progress log */}
+            {log.length > 0 && <StepLog messages={log} />}
           </>
         )}
 
@@ -159,7 +139,38 @@ export default function App() {
       >
         <DialogTitle>Step Details</DialogTitle>
         <DialogContent dividers>
-          <StepLog messages={log} />
+          {Object.keys(results).length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              No JSON results available yet.
+            </Typography>
+          ) : (
+            Object.entries(results).map(([key, data]) => (
+              <Box key={key} sx={{ mb: 3 }}>
+                <Typography variant="subtitle2" sx={{ mb: 1, textTransform: 'capitalize', fontWeight: 700 }}>
+                  {key}
+                </Typography>
+                <Box
+                  component="pre"
+                  sx={{
+                    m: 0,
+                    p: 1.5,
+                    bgcolor: 'grey.50',
+                    border: '1px solid',
+                    borderColor: 'grey.200',
+                    borderRadius: 1,
+                    fontSize: '0.72rem',
+                    fontFamily: 'monospace',
+                    overflowX: 'auto',
+                    maxHeight: 420,
+                    overflowY: 'auto',
+                    whiteSpace: 'pre',
+                  }}
+                >
+                  {JSON.stringify(data, null, 2)}
+                </Box>
+              </Box>
+            ))
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setReviewOpen(false)}>Close</Button>

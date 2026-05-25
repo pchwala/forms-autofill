@@ -2,6 +2,7 @@ import json
 import os
 import pathlib
 import sys
+from typing import Callable
 
 from openai import OpenAI
 
@@ -262,7 +263,7 @@ class ResponseGenerator:
             f"an array of exactly {count} response objects."
         )
 
-    def generate(self, output_file: str | None = None) -> list:
+    def generate(self, output_file: str | None = None, emit: Callable[[dict], None] | None = None) -> list:
         config = self._config
 
         strategy_path = pathlib.Path(config["strategy_file"])
@@ -278,10 +279,13 @@ class ResponseGenerator:
             # Build a focused system prompt containing only this persona's data.
             strategy_text = self._format_strategy_json(strategy, active_persona_code=code)
             system_prompt = self._build_system_prompt(strategy_text)
-            print(
+            msg = (
                 f"Generating {count} responses for persona {code} — {name} "
                 f"(~{len(system_prompt) // 4} input tokens in system prompt)..."
             )
+            print(msg)
+            if emit:
+                emit({"type": "message", "text": f"Generating {count} responses for persona {code} — {name}..."})
             completion = self._client.chat.completions.create(
                 model=model,
                 response_format={"type": "json_object"},
@@ -291,7 +295,10 @@ class ResponseGenerator:
                 ],
             )
             batch = json.loads(completion.choices[0].message.content)["responses"]
-            print(f"  Got {len(batch)} responses.")
+            msg2 = f"  Got {len(batch)} responses."
+            print(msg2)
+            if emit:
+                emit({"type": "message", "text": msg2})
             all_responses.extend(batch)
 
         if output_file is not None:

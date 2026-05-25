@@ -36,7 +36,9 @@ def step2_strategy(
     emit: Emit,
 ) -> pathlib.Path:
     emit({"type": "step", "step": 2, "status": "start", "message": "Generating strategy (3 GPT steps)..."})
-    strategy_path = sg_module.run(config_path=config_path)
+    strategy_path = sg_module.run(config_path=config_path, emit=emit)
+    strategy_data = json.loads(strategy_path.read_text(encoding="utf-8"))
+    emit({"type": "result", "key": "strategy", "data": strategy_data})
     emit({"type": "step", "step": 2, "status": "done", "message": f"Strategy saved: {strategy_path.name}"})
     return strategy_path
 
@@ -51,7 +53,8 @@ def step3_generate(
     config = json.loads(config_path.read_text(encoding="utf-8"))
     config["strategy_file"] = str(strategy_path)
     config["total_responses"] = total_responses
-    responses = ResponseGenerator(config).generate()
+    responses = ResponseGenerator(config).generate(emit=emit)
+    emit({"type": "result", "key": "responses", "data": responses})
     emit({"type": "step", "step": 3, "status": "done", "message": f"Generated {len(responses)} responses"})
     return responses
 

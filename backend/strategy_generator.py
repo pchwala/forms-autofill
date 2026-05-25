@@ -20,6 +20,7 @@ import os
 import pathlib
 import re
 import sys
+from typing import Callable
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -110,41 +111,67 @@ class StrategyGenerator:
     # Main entry point
     # ------------------------------------------------------------------
 
-    def run(self, start_step: int = 1, output: str | None = None) -> pathlib.Path:
+    def run(
+        self,
+        start_step: int = 1,
+        output: str | None = None,
+        emit: Callable[[dict], None] | None = None,
+    ) -> pathlib.Path:
         # ── Step 1: Web search ──────────────────────────────────────────
         if start_step <= 1:
-            print("Step 1/3 — Searching the web for research papers...")
+            msg = "Step 1/3 — Searching the web for research papers..."
+            print(msg)
+            if emit:
+                emit({"type": "message", "text": msg})
             research_basis = self._step1_web_search()
             rb_path = self._research_basis_path()
             rb_path.write_text(
                 json.dumps(research_basis, indent=2, ensure_ascii=False), encoding="utf-8"
             )
             n = len(research_basis.get("research_basis", []))
-            print(f"  Found {n} paper(s). Saved → {rb_path}")
+            msg2 = f"  Found {n} paper(s)."
+            print(msg2 + f" Saved → {rb_path}")
+            if emit:
+                emit({"type": "message", "text": msg2})
         else:
             rb_path = self._research_basis_path()
             research_basis = json.loads(rb_path.read_text(encoding="utf-8"))
             n = len(research_basis.get("research_basis", []))
-            print(f"Step 1/3 — Skipped (loaded {n} paper(s) from {rb_path})")
+            msg = f"Step 1/3 — Skipped (loaded {n} paper(s) from {rb_path})"
+            print(msg)
+            if emit:
+                emit({"type": "message", "text": msg})
 
         # ── Step 2: Analysis ────────────────────────────────────────────
         if start_step <= 2:
-            print("Step 2/3 — Analyzing papers, building distributions and persona archetypes...")
+            msg = "Step 2/3 — Analyzing papers, building distributions and persona archetypes..."
+            print(msg)
+            if emit:
+                emit({"type": "message", "text": msg})
             research_analysis = self._step2_analyze(research_basis)
             ra_path = self._research_analysis_path()
             ra_path.write_text(
                 json.dumps(research_analysis, indent=2, ensure_ascii=False), encoding="utf-8"
             )
             np_ = len(research_analysis.get("suggested_personas", []))
-            print(f"  Created {np_} persona archetype(s). Saved → {ra_path}")
+            msg2 = f"  Created {np_} persona archetype(s)."
+            print(msg2 + f" Saved → {ra_path}")
+            if emit:
+                emit({"type": "message", "text": msg2})
         else:
             ra_path = self._research_analysis_path()
             research_analysis = json.loads(ra_path.read_text(encoding="utf-8"))
             np_ = len(research_analysis.get("suggested_personas", []))
-            print(f"Step 2/3 — Skipped (loaded {np_} archetype(s) from {ra_path})")
+            msg = f"Step 2/3 — Skipped (loaded {np_} archetype(s) from {ra_path})"
+            print(msg)
+            if emit:
+                emit({"type": "message", "text": msg})
 
         # ── Step 3: Compile final strategy ──────────────────────────────
-        print("Step 3/3 — Compiling personas and final strategy JSON...")
+        msg = "Step 3/3 — Compiling personas and final strategy JSON..."
+        print(msg)
+        if emit:
+            emit({"type": "message", "text": msg})
         strategy = self._step3_compile(research_basis, research_analysis)
         dest = self._strategy_path(output)
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -152,11 +179,14 @@ class StrategyGenerator:
             json.dumps(strategy, indent=2, ensure_ascii=False), encoding="utf-8"
         )
         np_ = len(strategy.get("personas", []))
-        print(f"  Compiled {np_} persona(s). Saved → {dest}")
+        msg2 = f"  Compiled {np_} persona(s)."
+        print(msg2 + f" Saved → {dest}")
         print(
             f'\nDone! Set "strategy_file": "{dest}" in your form_config, '
             f'and optionally add "total_responses": 100.'
         )
+        if emit:
+            emit({"type": "message", "text": msg2})
         return dest
 
     # ------------------------------------------------------------------
@@ -398,6 +428,7 @@ def run(
     config_path: str | pathlib.Path,
     start_step: int = 1,
     output: str | None = None,
+    emit: Callable[[dict], None] | None = None,
 ) -> pathlib.Path:
     """Run the strategy generation pipeline and return the path to the strategy JSON.
 
@@ -405,6 +436,7 @@ def run(
         config_path: Path to form_config_N.json.
         start_step:  1 = full run, 2 = skip web search, 3 = skip web search + analysis.
         output:      Custom output path (default: data/strategy_N.json).
+        emit:        Optional SSE emit callback for streaming progress events.
     """
     config_path = pathlib.Path(config_path)
     config = json.loads(config_path.read_text(encoding="utf-8"))
@@ -413,6 +445,7 @@ def run(
     return StrategyGenerator(config, config_path, data_dir).run(
         start_step=start_step,
         output=output,
+        emit=emit,
     )
 
 

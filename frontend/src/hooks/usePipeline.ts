@@ -52,6 +52,7 @@ export function usePipeline(getToken: () => Promise<string>) {
   const [progress, setProgress] = useState(0);
   const [steps, setSteps] = useState<StepInfo[]>(makeSteps());
   const [log, setLog] = useState<string[]>([]);
+  const [results, setResults] = useState<Record<string, unknown>>({});
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(0); // steps completed so far
@@ -192,6 +193,10 @@ export function usePipeline(getToken: () => Promise<string>) {
                     completeStep(stepIdx);
                   }
                   if (event.message) appendLog(event.message as string);
+                } else if (event.type === 'message') {
+                  appendLog(event.text as string);
+                } else if (event.type === 'result') {
+                  setResults((prev) => ({ ...prev, [event.key as string]: event.data }));
                 } else if (event.type === 'step_complete') {
                   // step-by-step mode: step finished, wait for user
                   resolve();
@@ -231,6 +236,7 @@ export function usePipeline(getToken: () => Promise<string>) {
       setProgress(0);
       setSteps(makeSteps());
       setLog([]);
+      setResults({});
       setError(null);
       appendLog('Starting full pipeline...');
 
@@ -252,6 +258,7 @@ export function usePipeline(getToken: () => Promise<string>) {
       setProgress(0);
       setSteps(makeSteps());
       setLog([]);
+      setResults({});
       setError(null);
       setCurrentStep(0);
       appendLog('Starting session...');
@@ -312,6 +319,7 @@ export function usePipeline(getToken: () => Promise<string>) {
     setProgress(0);
     setSteps(makeSteps());
     setLog([]);
+    setResults({});
     setError(null);
     setSessionId(null);
     setCurrentStep(0);
@@ -322,6 +330,7 @@ export function usePipeline(getToken: () => Promise<string>) {
     progress,
     steps,
     log,
+    results,
     error,
     sessionId,
     currentStep,
