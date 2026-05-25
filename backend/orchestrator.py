@@ -22,7 +22,7 @@ def step1_extract(
     emit: Emit,
 ) -> pathlib.Path:
     emit({"type": "step", "step": 1, "status": "start", "message": "Extracting form questions"})
-    time.sleep(200)
+    #time.sleep(200)
     config_path = forms_extractor.extract(
         form_url=form_url,
         output_file="data/responses.json",

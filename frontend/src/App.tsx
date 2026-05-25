@@ -101,7 +101,8 @@ export default function App() {
             variant="body2"
             sx={isRunning ? {
               fontFamily: 'monospace',
-              background: 'linear-gradient(90deg, #555 20%, #bbb 50%, #555 80%)',
+              color: 'transparent',
+              background: 'linear-gradient(90deg, #888 20%, #ddd 50%, #888 80%)',
               backgroundSize: '250% 100%',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
