@@ -47,10 +47,10 @@ _jobs: dict[str, dict] = {}
 _sessions: dict[str, dict] = {}
 
 
-def _verify(authorization: str) -> None:
+def _verify(authorization: str | None) -> None:
     if AUTH_DISABLED:
         return
-    if not authorization.startswith("Bearer "):
+    if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing Bearer token")
     token = authorization[len("Bearer "):]
     try:
@@ -83,7 +83,7 @@ class SessionRequest(BaseModel):
 
 
 @app.post("/run")
-async def run(req: RunRequest, authorization: str = Header(...)):
+async def run(req: RunRequest, authorization: str | None = Header(default=None)):
     _verify(authorization)
     loop = asyncio.get_running_loop()
     job_id, _, emit = _make_job(loop)
@@ -104,7 +104,7 @@ async def run(req: RunRequest, authorization: str = Header(...)):
 
 
 @app.post("/session")
-async def create_session(req: SessionRequest, authorization: str = Header(...)):
+async def create_session(req: SessionRequest, authorization: str | None = Header(default=None)):
     _verify(authorization)
     session_id = str(uuid.uuid4())
     _sessions[session_id] = {
@@ -121,7 +121,7 @@ async def create_session(req: SessionRequest, authorization: str = Header(...)):
 
 
 @app.get("/session/{session_id}")
-async def get_session(session_id: str, authorization: str = Header(...)):
+async def get_session(session_id: str, authorization: str | None = Header(default=None)):
     _verify(authorization)
     if session_id not in _sessions:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -135,7 +135,7 @@ async def get_session(session_id: str, authorization: str = Header(...)):
 
 
 @app.post("/session/{session_id}/advance")
-async def advance_session(session_id: str, authorization: str = Header(...)):
+async def advance_session(session_id: str, authorization: str | None = Header(default=None)):
     _verify(authorization)
     if session_id not in _sessions:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -192,7 +192,7 @@ async def advance_session(session_id: str, authorization: str = Header(...)):
 
 
 @app.get("/stream/{job_id}")
-async def stream(job_id: str, authorization: str = Header(...)):
+async def stream(job_id: str, authorization: str | None = Header(default=None)):
     _verify(authorization)
     if job_id not in _jobs:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -209,7 +209,7 @@ async def stream(job_id: str, authorization: str = Header(...)):
 
 
 @app.get("/result/{job_id}")
-async def result(job_id: str, authorization: str = Header(...)):
+async def result(job_id: str, authorization: str | None = Header(default=None)):
     _verify(authorization)
     if job_id not in _jobs:
         raise HTTPException(status_code=404, detail="Job not found")

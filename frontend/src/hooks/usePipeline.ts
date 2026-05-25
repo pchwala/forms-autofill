@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+const API_KEY = import.meta.env.VITE_API_KEY ?? 'test-key';
 
 export type StepStatus = 'pending' | 'active' | 'done';
 export type PipelineStatus = 'idle' | 'running' | 'paused' | 'done' | 'error';
@@ -247,13 +248,13 @@ export function usePipeline(getToken: () => Promise<string>) {
 
   const createSession = useCallback(
     async (formUrl: string, totalResponses: number, model: string) => {
-      setStatus('paused');
+      setStatus('running');
       setProgress(0);
       setSteps(makeSteps());
       setLog([]);
       setError(null);
       setCurrentStep(0);
-      appendLog('Session created. Click "Run step 1" to begin.');
+      appendLog('Starting session...');
 
       const res = await fetch(`${API_URL}/session`, {
         method: 'POST',
@@ -263,8 +264,24 @@ export function usePipeline(getToken: () => Promise<string>) {
       if (!res.ok) throw new Error(`Failed to create session: ${res.status}`);
       const { session_id } = (await res.json()) as { session_id: string };
       setSessionId(session_id);
+
+      // Immediately run step 1 using session_id directly (state update is async)
+      const advRes = await fetch(`${API_URL}/session/${session_id}/advance`, {
+        method: 'POST',
+        headers: await buildHeaders(getToken),
+      });
+      if (!advRes.ok) throw new Error(`Failed to advance: ${advRes.status}`);
+      const { job_id, step } = (await advRes.json()) as { job_id: string; step: number };
+
+      await openStream(job_id);
+
+      setCurrentStep(step);
+      if (step < 5) {
+        setStatus('paused');
+        appendLog(`Step ${step} complete. Ready for step ${step + 1}.`);
+      }
     },
-    [appendLog],
+    [appendLog, openStream],
   );
 
   const advanceSession = useCallback(async () => {

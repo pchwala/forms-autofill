@@ -1,62 +1,112 @@
 import Box from '@mui/material/Box';
-import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
-import LinearProgress from '@mui/material/LinearProgress';
-import Typography from '@mui/material/Typography';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
+import Step from '@mui/material/Step';
+import StepConnector, { stepConnectorClasses } from '@mui/material/StepConnector';
+import type { StepIconProps } from '@mui/material/StepIcon';
+import StepLabel from '@mui/material/StepLabel';
+import Stepper from '@mui/material/Stepper';
+import { styled } from '@mui/material/styles';
+import CheckIcon from '@mui/icons-material/Check';
 import type { StepInfo } from '../hooks/usePipeline';
 
 interface Props {
-  progress: number;
   steps: StepInfo[];
 }
 
-function StepChip({ step, index }: { step: StepInfo; index: number }) {
-  const icon =
-    step.status === 'done' ? (
-      <CheckCircleIcon fontSize="small" />
-    ) : step.status === 'active' ? (
-      <CircularProgress size={14} color="inherit" />
-    ) : (
-      <RadioButtonUncheckedIcon fontSize="small" />
-    );
+// Styled connector line between circles
+const PipelineConnector = styled(StepConnector)(({ theme }) => ({
+  [`&.${stepConnectorClasses.alternativeLabel}`]: {
+    top: 18,
+  },
+  [`&.${stepConnectorClasses.active}`]: {
+    [`& .${stepConnectorClasses.line}`]: {
+      borderColor: theme.palette.primary.main,
+    },
+  },
+  [`&.${stepConnectorClasses.completed}`]: {
+    [`& .${stepConnectorClasses.line}`]: {
+      borderColor: theme.palette.primary.main,
+    },
+  },
+  [`& .${stepConnectorClasses.line}`]: {
+    borderColor: theme.palette.grey[300],
+    borderTopWidth: 3,
+    borderRadius: 1,
+  },
+}));
 
+// Styled circle icon
+const PipelineIconRoot = styled('div')<{ ownerState: { status: 'done' | 'active' | 'pending' } }>(
+  ({ theme, ownerState }) => ({
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 36,
+    height: 36,
+    borderRadius: '50%',
+    fontSize: '0.875rem',
+    fontWeight: 700,
+    zIndex: 1,
+    ...(ownerState.status === 'done' && {
+      backgroundColor: theme.palette.primary.main,
+      color: '#fff',
+    }),
+    ...(ownerState.status === 'active' && {
+      backgroundColor: '#4caf50',
+      color: '#fff',
+      boxShadow: '0 0 0 4px rgba(76,175,80,0.2)',
+    }),
+    ...(ownerState.status === 'pending' && {
+      backgroundColor: '#fff',
+      color: theme.palette.grey[500],
+      border: `2px solid ${theme.palette.grey[300]}`,
+    }),
+  }),
+);
+
+function PipelineStepIcon(props: StepIconProps & { stepStatus: 'done' | 'active' | 'pending' }) {
+  const { icon, stepStatus } = props;
   return (
-    <Chip
-      key={index}
-      label={`${index + 1}. ${step.label}`}
-      icon={icon}
-      size="small"
-      color={step.status === 'done' ? 'success' : step.status === 'active' ? 'primary' : 'default'}
-      variant={step.status === 'pending' ? 'outlined' : 'filled'}
-    />
+    <PipelineIconRoot ownerState={{ status: stepStatus }}>
+      {stepStatus === 'done' ? (
+        <CheckIcon sx={{ fontSize: 18 }} />
+      ) : stepStatus === 'active' ? (
+        <CircularProgress size={16} thickness={5} sx={{ color: '#fff' }} />
+      ) : (
+        icon
+      )}
+    </PipelineIconRoot>
   );
 }
 
-export default function PipelineProgress({ progress, steps }: Props) {
+export default function PipelineProgress({ steps }: Props) {
+  const activeIndex = steps.findIndex((s) => s.status === 'active');
+  // MUI Stepper activeStep: index of the step currently in progress
+  const activeStep = activeIndex === -1 ? steps.filter((s) => s.status === 'done').length : activeIndex;
+
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography variant="body2" color="text.secondary">
-          Overall progress
-        </Typography>
-        <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-          {Math.round(progress)}%
-        </Typography>
-      </Box>
-
-      <LinearProgress
-        variant="determinate"
-        value={Math.min(progress, 100)}
-        sx={{ height: 10, borderRadius: 5 }}
-      />
-
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 0.5 }}>
+    <Box sx={{ width: '100%' }}>
+      <Stepper alternativeLabel activeStep={activeStep} connector={<PipelineConnector />}>
         {steps.map((step, i) => (
-          <StepChip key={i} step={step} index={i} />
+          <Step key={i} completed={step.status === 'done'}>
+            <StepLabel
+              StepIconComponent={(iconProps) => (
+                <PipelineStepIcon {...iconProps} stepStatus={step.status} />
+              )}
+              sx={{
+                '& .MuiStepLabel-label': {
+                  fontSize: '0.75rem',
+                  mt: 0.5,
+                  color: step.status === 'active' ? '#4caf50' : undefined,
+                  fontWeight: step.status === 'active' ? 700 : undefined,
+                },
+              }}
+            >
+              {step.label}
+            </StepLabel>
+          </Step>
         ))}
-      </Box>
+      </Stepper>
     </Box>
   );
 }

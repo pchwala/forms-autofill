@@ -1,7 +1,12 @@
+import { useState } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Container from '@mui/material/Container';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
@@ -12,23 +17,22 @@ import { usePipeline } from './hooks/usePipeline';
 import { useAuth } from './hooks/useAuth';
 import AuthGuard from './components/AuthGuard';
 
-const STEP_NAMES = [
-  'Extract form',
-  'Generate strategy',
-  'Generate responses',
-  'Shuffle responses',
-  'Submit responses',
-];
+const STEP_STATUS_MESSAGES: Record<string, string> = {
+  'Extract form': 'Extracting form...',
+  'Generate strategy': 'Generating strategy...',
+  'Generate responses': 'Generating responses...',
+  'Shuffle responses': 'Shuffling responses...',
+  'Submit responses': 'Submitting responses...',
+};
 
 export default function App() {
   const { getToken } = useAuth();
+  const [reviewOpen, setReviewOpen] = useState(false);
   const {
     status,
-    progress,
     steps,
     log,
     error,
-    currentStep,
     startFullPipeline,
     createSession,
     advanceSession,
@@ -61,8 +65,14 @@ export default function App() {
     }
   }
 
-  const nextStepLabel =
-    currentStep < 5 ? STEP_NAMES[currentStep] : null;
+  const activeStep = steps.find((s) => s.status === 'active');
+  const statusMessage = activeStep
+    ? (STEP_STATUS_MESSAGES[activeStep.label] ?? `${activeStep.label}...`)
+    : isPaused
+    ? 'Ready for next step.'
+    : isRunning
+    ? 'Running...'
+    : null;
 
   return (
     <AuthGuard>
@@ -82,20 +92,36 @@ export default function App() {
         {!isIdle && (
           <>
             <Divider />
-            <PipelineProgress progress={progress} steps={steps} />
-          </>
-        )}
 
-        {/* Step-by-step controls */}
-        {isPaused && nextStepLabel && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Button variant="contained" onClick={handleAdvance}>
-              Run step {currentStep + 1}: {nextStepLabel}
-            </Button>
-            <Button variant="outlined" color="error" onClick={reset}>
-              Cancel
-            </Button>
-          </Box>
+            {/* Button row — above stepper */}
+            {isPaused && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Button variant="contained" onClick={handleAdvance}>
+                  Next Step
+                </Button>
+                <Button
+                  variant="outlined"
+                  onClick={() => setReviewOpen(true)}
+                  disabled={log.length === 0}
+                >
+                  Review Details
+                </Button>
+                <Button variant="outlined" color="error" onClick={reset}>
+                  Cancel
+                </Button>
+              </Box>
+            )}
+
+            {/* Stepper */}
+            <PipelineProgress steps={steps} />
+
+            {/* Simple status message */}
+            {statusMessage && (
+              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', mt: -1 }}>
+                {statusMessage}
+              </Typography>
+            )}
+          </>
         )}
 
         {/* Done state */}
@@ -121,10 +147,24 @@ export default function App() {
             </Button>
           </Box>
         )}
-
-        {/* Log */}
-        <StepLog messages={log} />
       </Paper>
+
+      {/* Review Details dialog */}
+      <Dialog
+        open={reviewOpen}
+        onClose={() => setReviewOpen(false)}
+        maxWidth="md"
+        fullWidth
+        scroll="paper"
+      >
+        <DialogTitle>Step Details</DialogTitle>
+        <DialogContent dividers>
+          <StepLog messages={log} />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setReviewOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
     </Container>
     </AuthGuard>
   );

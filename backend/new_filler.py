@@ -78,7 +78,13 @@ class FormFiller:
             timeout=30,
         )
 
-        if "formResponse" not in resp.url:
+        # A successful submission lands on the formResponse confirmation page, OR
+        # on viewform?edit_requested=true when the form allows response editing.
+        is_confirmed = (
+            "formResponse" in resp.url
+            or "edit_requested=true" in resp.url
+        )
+        if not is_confirmed:
             raise RuntimeError(
                 f"Submission confirmation not detected — "
                 f"final URL was {resp.url!r} (HTTP {resp.status_code})."
