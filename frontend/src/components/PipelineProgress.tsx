@@ -29,7 +29,7 @@ const PipelineConnector = styled(StepConnector)(({ theme }) => ({
     },
   },
   [`& .${stepConnectorClasses.line}`]: {
-    borderColor: theme.palette.grey[300],
+    borderColor: '#2d3136',
     borderTopWidth: 3,
     borderRadius: 1,
   },
@@ -57,9 +57,9 @@ const PipelineIconRoot = styled('div')<{ ownerState: { status: 'done' | 'active'
       boxShadow: '0 0 0 4px rgba(76,175,80,0.2)',
     }),
     ...(ownerState.status === 'pending' && {
-      backgroundColor: '#fff',
-      color: theme.palette.grey[500],
-      border: `2px solid ${theme.palette.grey[300]}`,
+      backgroundColor: '#1a1f26',
+      color: '#9aa0a6',
+      border: '2px solid #2d3136',
     }),
   }),
 );

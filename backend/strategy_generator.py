@@ -90,7 +90,7 @@ class StrategyGenerator:
         self._suffix = _extract_suffix(config_path)
         self._data_dir = data_dir
         self._client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        self._model = "gpt-5"
+        self._model = "gpt-4.1"
 
     # ------------------------------------------------------------------
     # Path helpers

@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 import pathlib
 import random
+import time
 from typing import Callable
+
+from anyio import sleep
 
 import backend.forms_extractor as forms_extractor
 import backend.strategy_generator as sg_module
@@ -19,6 +22,7 @@ def step1_extract(
     emit: Emit,
 ) -> pathlib.Path:
     emit({"type": "step", "step": 1, "status": "start", "message": "Extracting form questions"})
+    time.sleep(200)
     config_path = forms_extractor.extract(
         form_url=form_url,
         output_file="data/responses.json",

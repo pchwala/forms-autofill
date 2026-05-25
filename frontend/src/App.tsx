@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { keyframes } from '@mui/system';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -96,7 +97,24 @@ export default function App() {
 
         {/* Current step message */}
         {(log.length > 0 || submitProgress) && (
-          <Typography variant="body2" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
+          <Typography
+            variant="body2"
+            sx={isRunning ? {
+              fontFamily: 'monospace',
+              background: 'linear-gradient(90deg, #555 20%, #bbb 50%, #555 80%)',
+              backgroundSize: '250% 100%',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+              animation: `${keyframes`
+                from { background-position: 240% 0%; }
+                to   { background-position: -100% 0%; }
+              `} 4s linear infinite`,
+            } : {
+              fontFamily: 'monospace',
+              color: 'text.secondary',
+            }}
+          >
             {submitProgress
               ? `Submitting responses to Google Form — ${submitProgress.current}/${submitProgress.total}`
               : log[log.length - 1]}
@@ -143,9 +161,10 @@ export default function App() {
                   sx={{
                     m: 0,
                     p: 1.5,
-                    bgcolor: 'grey.50',
+                    bgcolor: '#111418',
                     border: '1px solid',
-                    borderColor: 'grey.200',
+                    borderColor: '#2d3136',
+                    color: '#e8eaed',
                     borderRadius: 1,
                     fontSize: '0.72rem',
                     fontFamily: 'monospace',
