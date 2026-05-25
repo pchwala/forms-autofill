@@ -15,14 +15,12 @@ Emit = Callable[[dict], None]
 
 def step1_extract(
     form_url: str,
-    model: str,
     data_dir: pathlib.Path,
     emit: Emit,
 ) -> pathlib.Path:
-    emit({"type": "step", "step": 1, "status": "start", "message": "Extracting form questions..."})
+    emit({"type": "step", "step": 1, "status": "start", "message": "Extracting form questions"})
     config_path = forms_extractor.extract(
         form_url=form_url,
-        model=model,
         output_file="data/responses.json",
         strategy_file="data/strategy.json",
         data_dir=data_dir,
@@ -35,7 +33,7 @@ def step2_strategy(
     config_path: pathlib.Path,
     emit: Emit,
 ) -> pathlib.Path:
-    emit({"type": "step", "step": 2, "status": "start", "message": "Generating strategy (3 GPT steps)..."})
+    emit({"type": "step", "step": 2, "status": "start", "message": "Generating strategy (3 GPT steps)"})
     strategy_path = sg_module.run(config_path=config_path, emit=emit)
     strategy_data = json.loads(strategy_path.read_text(encoding="utf-8"))
     emit({"type": "result", "key": "strategy", "data": strategy_data})
@@ -49,7 +47,7 @@ def step3_generate(
     total_responses: int,
     emit: Emit,
 ) -> list[dict]:
-    emit({"type": "step", "step": 3, "status": "start", "message": f"Generating {total_responses} responses..."})
+    emit({"type": "step", "step": 3, "status": "start", "message": f"Generating {total_responses} responses"})
     config = json.loads(config_path.read_text(encoding="utf-8"))
     config["strategy_file"] = str(strategy_path)
     config["total_responses"] = total_responses
@@ -63,7 +61,7 @@ def step4_shuffle(
     responses: list[dict],
     emit: Emit,
 ) -> list[dict]:
-    emit({"type": "step", "step": 4, "status": "start", "message": "Shuffling responses..."})
+    emit({"type": "step", "step": 4, "status": "start", "message": "Shuffling responses"})
     shuffled = list(responses)
     random.shuffle(shuffled)
     emit({"type": "step", "step": 4, "status": "done", "message": "Responses shuffled"})
@@ -75,7 +73,7 @@ def step5_submit(
     responses: list[dict],
     emit: Emit,
 ) -> None:
-    emit({"type": "step", "step": 5, "status": "start", "message": f"Submitting {len(responses)} responses to Google Form..."})
+    emit({"type": "step", "step": 5, "status": "start", "message": f"Submitting {len(responses)} responses to Google Form"})
     config = json.loads(config_path.read_text(encoding="utf-8"))
     FormFiller(config).submit_range(responses, 0, len(responses), emit=emit)
     emit({"type": "step", "step": 5, "status": "done", "message": "All responses submitted"})
@@ -84,13 +82,12 @@ def step5_submit(
 def run_pipeline(
     form_url: str,
     total_responses: int,
-    model: str,
     emit: Emit,
 ) -> list[dict]:
     data_dir = pathlib.Path("data")
     data_dir.mkdir(exist_ok=True)
 
-    config_path = step1_extract(form_url, model, data_dir, emit)
+    config_path = step1_extract(form_url, data_dir, emit)
     strategy_path = step2_strategy(config_path, emit)
     responses = step3_generate(config_path, strategy_path, total_responses, emit)
     shuffled = step4_shuffle(responses, emit)

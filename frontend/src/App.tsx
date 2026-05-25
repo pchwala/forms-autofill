@@ -12,7 +12,6 @@ import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
 import InputForm, { type PipelineMode } from './components/InputForm';
 import PipelineProgress from './components/PipelineProgress';
-import StepLog from './components/StepLog';
 import { usePipeline } from './hooks/usePipeline';
 import { useAuth } from './hooks/useAuth';
 import AuthGuard from './components/AuthGuard';
@@ -39,12 +38,12 @@ export default function App() {
   const isDone = status === 'done';
   const isError = status === 'error';
 
-  async function handleStart(url: string, count: number, mode: PipelineMode, model: string) {
+  async function handleStart(url: string, count: number, mode: PipelineMode) {
     try {
       if (mode === 'full') {
-        await startFullPipeline(url, count, model);
+        await startFullPipeline(url, count);
       } else {
-        await createSession(url, count, model);
+        await createSession(url, count);
       }
     } catch {
       // error state already set inside the hook
@@ -73,69 +72,49 @@ export default function App() {
         {/* Input form — always visible, disabled while running */}
         <InputForm onStart={handleStart} disabled={isRunning || isPaused || isDone} />
 
-        {/* Progress section — shown once started */}
-        {!isIdle && (
-          <>
-            <Divider />
+        <Divider />
 
-            {/* Button row — above stepper */}
-            {isPaused && (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Button variant="contained" onClick={handleAdvance}>
-                  Next Step
-                </Button>
-                <Button
-                  variant="outlined"
-                  onClick={() => setReviewOpen(true)}
-                  disabled={log.length === 0}
-                >
-                  Review Details
-                </Button>
-                <Button variant="outlined" color="error" onClick={reset}>
-                  Cancel
-                </Button>
-              </Box>
-            )}
+        {/* Button row — always visible */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Button variant="contained" onClick={handleAdvance} disabled={!isPaused}>
+            Next Step
+          </Button>
+          <Button
+            variant="outlined"
+            onClick={() => setReviewOpen(true)}
+            disabled={log.length === 0}
+          >
+            Review Details
+          </Button>
+          <Button variant="outlined" color="error" onClick={reset} disabled={isIdle}>
+            Reset
+          </Button>
+        </Box>
 
-            {/* Stepper */}
-            <PipelineProgress steps={steps} />
+        {/* Stepper — always visible */}
+        <PipelineProgress steps={steps} />
 
-            {/* Detailed progress log */}
-            {log.length > 0 && (
-              <StepLog
-                messages={log}
-                liveMessage={
-                  submitProgress
-                    ? `Submitting responses to Google Form - ${submitProgress.current}/${submitProgress.total}...`
-                    : undefined
-                }
-              />
-            )}
-          </>
+        {/* Current step message */}
+        {(log.length > 0 || submitProgress) && (
+          <Typography variant="body2" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
+            {submitProgress
+              ? `Submitting responses to Google Form — ${submitProgress.current}/${submitProgress.total}`
+              : log[log.length - 1]}
+          </Typography>
         )}
 
         {/* Done state */}
         {isDone && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Alert severity="success" sx={{ flex: 1 }}>
-              Pipeline complete — all responses submitted successfully.
-            </Alert>
-            <Button variant="outlined" onClick={reset}>
-              Start over
-            </Button>
-          </Box>
+          <Alert severity="success">
+            Pipeline complete — all responses submitted successfully.
+          </Alert>
         )}
 
         {/* Error state */}
         {isError && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Alert severity="error" sx={{ flex: 1 }}>
-              {error ?? 'An unexpected error occurred.'}
-            </Alert>
-            <Button variant="outlined" onClick={reset}>
-              Retry
-            </Button>
-          </Box>
+          <Alert severity="error">
+            {error ?? 'An unexpected error occurred.'}
+          </Alert>
         )}
       </Paper>
 

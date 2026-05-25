@@ -308,7 +308,6 @@ def _compute_routing_skips(
 
 def extract(
     form_url: str,
-    model: str,
     output_file: str,
     strategy_file: str,
     data_dir: pathlib.Path,
@@ -337,7 +336,6 @@ def extract(
         "form_title": form_title,
         "output_file": output_file,
         "strategy_file": strategy_file,
-        "model": model,
         "pages": pages,
         "routing": routing,
         "questions": questions,

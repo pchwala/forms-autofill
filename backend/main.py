@@ -73,13 +73,11 @@ def _make_job(loop: asyncio.AbstractEventLoop) -> tuple[str, asyncio.Queue, call
 class RunRequest(BaseModel):
     form_url: str
     total_responses: int = 100
-    model: str = "gpt-4.1"
 
 
 class SessionRequest(BaseModel):
     form_url: str
     total_responses: int = 100
-    model: str = "gpt-4.1"
 
 
 @app.post("/run")
@@ -90,7 +88,7 @@ async def run(req: RunRequest, authorization: str | None = Header(default=None))
 
     def worker() -> None:
         try:
-            responses = run_pipeline(req.form_url, req.total_responses, req.model, emit)
+            responses = run_pipeline(req.form_url, req.total_responses, emit)
             _jobs[job_id]["status"] = "done"
             _jobs[job_id]["result"] = responses
             emit({"type": "done", "total": len(responses)})
@@ -110,7 +108,6 @@ async def create_session(req: SessionRequest, authorization: str | None = Header
     _sessions[session_id] = {
         "form_url": req.form_url,
         "total_responses": req.total_responses,
-        "model": req.model,
         "current_step": 0,
         "status": "idle",
         "config_path": None,
@@ -157,7 +154,7 @@ async def advance_session(session_id: str, authorization: str | None = Header(de
             data_dir.mkdir(exist_ok=True)
 
             if next_step == 1:
-                result = step1_extract(s["form_url"], s["model"], data_dir, emit)
+                result = step1_extract(s["form_url"], data_dir, emit)
                 s["config_path"] = result
             elif next_step == 2:
                 result = step2_strategy(s["config_path"], emit)

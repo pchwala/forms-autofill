@@ -90,7 +90,7 @@ class StrategyGenerator:
         self._suffix = _extract_suffix(config_path)
         self._data_dir = data_dir
         self._client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        self._model = config.get("model", "gpt-5")
+        self._model = "gpt-5"
 
     # ------------------------------------------------------------------
     # Path helpers
@@ -119,7 +119,7 @@ class StrategyGenerator:
     ) -> pathlib.Path:
         # ── Step 1: Web search ──────────────────────────────────────────
         if start_step <= 1:
-            msg = "Step 1/3 — Searching the web for research papers..."
+            msg = "Step 1/3 — Searching the web for research papers"
             print(msg)
             if emit:
                 emit({"type": "message", "text": msg})
@@ -144,7 +144,7 @@ class StrategyGenerator:
 
         # ── Step 2: Analysis ────────────────────────────────────────────
         if start_step <= 2:
-            msg = "Step 2/3 — Analyzing papers, building distributions and persona archetypes..."
+            msg = "Step 2/3 — Analyzing papers, building distributions and persona archetypes"
             print(msg)
             if emit:
                 emit({"type": "message", "text": msg})
@@ -168,7 +168,7 @@ class StrategyGenerator:
                 emit({"type": "message", "text": msg})
 
         # ── Step 3: Compile final strategy ──────────────────────────────
-        msg = "Step 3/3 — Compiling personas and final strategy..."
+        msg = "Step 3/3 — Compiling personas and final strategy"
         print(msg)
         if emit:
             emit({"type": "message", "text": msg})

@@ -271,7 +271,7 @@ class ResponseGenerator:
         total = config.get("total_responses", 100)
         personas = self._resolve_persona_counts(strategy["personas"], total)
 
-        model = config.get("model", "gpt-4.1")
+        model = "gpt-4.1"
         all_responses: list = []
 
         for persona in personas:
@@ -285,7 +285,7 @@ class ResponseGenerator:
             )
             print(msg)
             if emit:
-                emit({"type": "message", "text": f"Generating {count} responses for persona {code} — {name}..."})
+                emit({"type": "message", "text": f"Generating {count} responses for persona {code} — {name}"})
             completion = self._client.chat.completions.create(
                 model=model,
                 response_format={"type": "json_object"},

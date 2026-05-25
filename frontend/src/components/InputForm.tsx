@@ -9,7 +9,7 @@ import { useState } from 'react';
 export type PipelineMode = 'full' | 'step';
 
 interface Props {
-  onStart: (url: string, count: number, mode: PipelineMode, model: string) => void;
+  onStart: (url: string, count: number, mode: PipelineMode) => void;
   disabled?: boolean;
 }
 
@@ -17,7 +17,6 @@ export default function InputForm({ onStart, disabled }: Props) {
   const [url, setUrl] = useState('');
   const [count, setCount] = useState(100);
   const [mode, setMode] = useState<PipelineMode>('full');
-  const [model, setModel] = useState('gpt-4.1');
 
   const valid = url.trim().length > 0 && count > 0;
 
@@ -44,14 +43,6 @@ export default function InputForm({ onStart, disabled }: Props) {
           slotProps={{ htmlInput: { min: 1 } }}
           sx={{ width: 200 }}
         />
-        <TextField
-          label="Model"
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          disabled={disabled}
-          size="small"
-          sx={{ width: 160 }}
-        />
       </Box>
 
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -74,7 +65,7 @@ export default function InputForm({ onStart, disabled }: Props) {
         <Button
           variant="contained"
           disabled={disabled || !valid}
-          onClick={() => onStart(url.trim(), count, mode, model)}
+          onClick={() => onStart(url.trim(), count, mode)}
         >
           Start
         </Button>
