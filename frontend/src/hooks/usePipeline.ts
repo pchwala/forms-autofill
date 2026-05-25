@@ -56,6 +56,7 @@ export function usePipeline(getToken: () => Promise<string>) {
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(0); // steps completed so far
+  const [submitProgress, setSubmitProgress] = useState<{ current: number; total: number } | null>(null);
 
   const animRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const esRef = useRef<EventSource | null>(null);
@@ -195,6 +196,8 @@ export function usePipeline(getToken: () => Promise<string>) {
                   if (event.message) appendLog(event.message as string);
                 } else if (event.type === 'message') {
                   appendLog(event.text as string);
+                } else if (event.type === 'submit_progress') {
+                  setSubmitProgress({ current: event.current as number, total: event.total as number });
                 } else if (event.type === 'result') {
                   setResults((prev) => ({ ...prev, [event.key as string]: event.data }));
                 } else if (event.type === 'step_complete') {
@@ -202,6 +205,7 @@ export function usePipeline(getToken: () => Promise<string>) {
                   resolve();
                 } else if (event.type === 'done') {
                   appendLog(`Pipeline complete — ${event.total} responses submitted.`);
+                  setSubmitProgress(null);
                   setStatus('done');
                   setProgress(100);
                   setSteps((prev) => prev.map((s) => ({ ...s, status: 'done' })));
@@ -323,6 +327,7 @@ export function usePipeline(getToken: () => Promise<string>) {
     setError(null);
     setSessionId(null);
     setCurrentStep(0);
+    setSubmitProgress(null);
   }, [stopAnimation, stopStream]);
 
   return {
@@ -334,6 +339,7 @@ export function usePipeline(getToken: () => Promise<string>) {
     error,
     sessionId,
     currentStep,
+    submitProgress,
     startFullPipeline,
     createSession,
     advanceSession,

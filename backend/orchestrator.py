@@ -27,7 +27,7 @@ def step1_extract(
         strategy_file="data/strategy.json",
         data_dir=data_dir,
     )
-    emit({"type": "step", "step": 1, "status": "done", "message": f"Form extracted: {config_path.name}"})
+    emit({"type": "step", "step": 1, "status": "done", "message": f"Form extracted."})
     return config_path
 
 
@@ -39,7 +39,7 @@ def step2_strategy(
     strategy_path = sg_module.run(config_path=config_path, emit=emit)
     strategy_data = json.loads(strategy_path.read_text(encoding="utf-8"))
     emit({"type": "result", "key": "strategy", "data": strategy_data})
-    emit({"type": "step", "step": 2, "status": "done", "message": f"Strategy saved: {strategy_path.name}"})
+    emit({"type": "step", "step": 2, "status": "done", "message": f"Strategy saved."})
     return strategy_path
 
 
@@ -77,7 +77,7 @@ def step5_submit(
 ) -> None:
     emit({"type": "step", "step": 5, "status": "start", "message": f"Submitting {len(responses)} responses to Google Form..."})
     config = json.loads(config_path.read_text(encoding="utf-8"))
-    FormFiller(config).submit_range(responses, 0, len(responses))
+    FormFiller(config).submit_range(responses, 0, len(responses), emit=emit)
     emit({"type": "step", "step": 5, "status": "done", "message": "All responses submitted"})
 
 

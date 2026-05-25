@@ -168,7 +168,7 @@ class StrategyGenerator:
                 emit({"type": "message", "text": msg})
 
         # ── Step 3: Compile final strategy ──────────────────────────────
-        msg = "Step 3/3 — Compiling personas and final strategy JSON..."
+        msg = "Step 3/3 — Compiling personas and final strategy..."
         print(msg)
         if emit:
             emit({"type": "message", "text": msg})

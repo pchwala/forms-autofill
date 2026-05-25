@@ -5,9 +5,10 @@ import { useEffect, useRef } from 'react';
 
 interface Props {
   messages: string[];
+  liveMessage?: string;
 }
 
-export default function StepLog({ messages }: Props) {
+export default function StepLog({ messages, liveMessage }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -32,6 +33,11 @@ export default function StepLog({ messages }: Props) {
             {msg}
           </Typography>
         ))}
+        {liveMessage && (
+          <Typography variant="body2" sx={{ fontFamily: 'monospace', color: 'primary.main', fontWeight: 700 }}>
+            {liveMessage}
+          </Typography>
+        )}
         <div ref={bottomRef} />
       </Box>
     </Paper>

@@ -9,6 +9,7 @@ import sys
 import time
 
 import requests
+from typing import Callable
 
 
 class FormFiller:
@@ -90,13 +91,14 @@ class FormFiller:
                 f"final URL was {resp.url!r} (HTTP {resp.status_code})."
             )
 
-    def submit_range(self, responses: list, start: int, count: int) -> None:
+    def submit_range(self, responses: list, start: int, count: int, emit: Callable[[dict], None] | None = None) -> None:
         """Submit *count* responses from *responses* beginning at *start*.
 
         Args:
             responses: Full list of response dicts loaded from JSON.
             start: Index of the first response to submit (0-based).
             count: How many responses to submit.
+            emit: Optional callback to stream progress events to the frontend.
         """
         subset = responses[start: start + count]
 
@@ -119,6 +121,9 @@ class FormFiller:
                     print("  ✓ Submitted.")
                 except RuntimeError as exc:
                     print(f"  ✗ Failed: {exc}")
+
+                if emit is not None:
+                    emit({"type": "submit_progress", "current": i - start + 1, "total": len(subset)})
 
                 # Small random delay to avoid triggering spam detection.
                 if i < start + len(subset) - 1:

@@ -26,6 +26,7 @@ export default function App() {
     log,
     results,
     error,
+    submitProgress,
     startFullPipeline,
     createSession,
     advanceSession,
@@ -100,7 +101,16 @@ export default function App() {
             <PipelineProgress steps={steps} />
 
             {/* Detailed progress log */}
-            {log.length > 0 && <StepLog messages={log} />}
+            {log.length > 0 && (
+              <StepLog
+                messages={log}
+                liveMessage={
+                  submitProgress
+                    ? `Submitting responses to Google Form - ${submitProgress.current}/${submitProgress.total}...`
+                    : undefined
+                }
+              />
+            )}
           </>
         )}
 
