@@ -38,7 +38,15 @@ app.add_middleware(
 AUTH_DISABLED = os.getenv("AUTH_DISABLED", "false").lower() == "true"
 
 if not AUTH_DISABLED:
-    _cred = credentials.Certificate("/app/backend/firebase_credentials.json")
+    cred_path = "/app/backend/firebase_credentials.json"
+    if pathlib.Path(cred_path).is_file():
+        _cred = credentials.Certificate(cred_path)
+    else:
+        _creds_json = os.getenv("FIREBASE_CREDENTIALS_JSON")
+        if _creds_json:
+            _cred = credentials.Certificate(json.loads(_creds_json))
+        else:
+            _cred = credentials.ApplicationDefault()
     firebase_admin.initialize_app(_cred)
 
 _jobs: dict[str, dict] = {}
