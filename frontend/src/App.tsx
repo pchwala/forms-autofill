@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { keyframes } from '@mui/system';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
@@ -15,11 +15,13 @@ import InputForm, { type PipelineMode } from './components/InputForm';
 import PipelineProgress from './components/PipelineProgress';
 import { usePipeline } from './hooks/usePipeline';
 import { useAuth } from './hooks/useAuth';
+import { useUserStatus } from './hooks/useUserStatus';
 import AuthGuard from './components/AuthGuard';
 
 export default function App() {
   const { getToken } = useAuth();
   const [reviewOpen, setReviewOpen] = useState(false);
+  const { freeUsed, paid, refresh: refreshStatus } = useUserStatus(getToken);
   const {
     status,
     steps,
@@ -38,6 +40,11 @@ export default function App() {
   const isPaused = status === 'paused';
   const isDone = status === 'done';
   const isError = status === 'error';
+  const isBlocked = status === 'blocked';
+
+  useEffect(() => {
+    if (isBlocked) void refreshStatus();
+  }, [isBlocked, refreshStatus]);
 
   async function handleStart(url: string, count: number, mode: PipelineMode) {
     try {
@@ -71,7 +78,7 @@ export default function App() {
 
       <Paper sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
         {/* Input form — always visible, disabled while running */}
-        <InputForm onStart={handleStart} disabled={isRunning || isPaused || isDone} />
+        <InputForm onStart={handleStart} disabled={isRunning || isPaused || isDone} freeUsed={freeUsed} paid={paid} />
 
         <Divider />
 

@@ -11,14 +11,41 @@ export type PipelineMode = 'full' | 'step';
 interface Props {
   onStart: (url: string, count: number, mode: PipelineMode) => void;
   disabled?: boolean;
+  freeUsed?: boolean;
+  paid?: boolean;
 }
 
-export default function InputForm({ onStart, disabled }: Props) {
+export default function InputForm({ onStart, disabled, freeUsed, paid }: Props) {
   const [url, setUrl] = useState('');
   const [count, setCount] = useState(100);
   const [mode, setMode] = useState<PipelineMode>('full');
 
   const valid = url.trim().length > 0 && count > 0;
+
+  if (freeUsed && !paid) {
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Typography variant="body1" fontWeight="medium">
+          You've used your free run.
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Donate €5+ on Ko-fi and write your Google account email in the payment
+          message to unlock unlimited access.
+        </Typography>
+        <Box>
+          <Button
+            variant="contained"
+            component="a"
+            href="https://ko-fi.com"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Donate on Ko-fi
+          </Button>
+        </Box>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

@@ -4,17 +4,25 @@ import asyncio
 import json
 import os
 import pathlib
+import re
 import threading
 import uuid
 from typing import AsyncGenerator
 
 import firebase_admin
-from firebase_admin import auth as firebase_auth, credentials
-from fastapi import FastAPI, Header, HTTPException
+from firebase_admin import auth as firebase_auth, credentials, firestore as fb_firestore
+from fastapi import FastAPI, Form, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from .firestore_service import (
+    can_run_pipeline,
+    consume_free_use,
+    get_or_create_user,
+    get_user_status,
+    mark_paid,
+)
 from .orchestrator import (
     run_pipeline,
     step1_extract,
@@ -58,21 +66,23 @@ AUTH_DISABLED = os.getenv("AUTH_DISABLED", "false").lower() == "true"
 if not AUTH_DISABLED:
     _cred = _load_firebase_credentials()
     firebase_admin.initialize_app(_cred)
+    fb_firestore.client()  # Validate Firestore connection at startup
 
 _jobs: dict[str, dict] = {}
 _sessions: dict[str, dict] = {}
 
 
-def _verify(authorization: str | None) -> None:
+def _verify(authorization: str | None) -> dict[str, str]:
     if AUTH_DISABLED:
-        return
+        return {"uid": "dev", "email": "dev@local"}
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing Bearer token")
     token = authorization[len("Bearer "):]
     try:
-        firebase_auth.verify_id_token(token)
+        decoded = firebase_auth.verify_id_token(token)
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return {"uid": decoded["uid"], "email": decoded.get("email", "")}
 
 
 def _make_job(loop: asyncio.AbstractEventLoop) -> tuple[str, asyncio.Queue, callable]:
@@ -98,7 +108,13 @@ class SessionRequest(BaseModel):
 
 @app.post("/run")
 async def run(req: RunRequest, authorization: str | None = Header(default=None)):
-    _verify(authorization)
+    user = _verify(authorization)
+    uid, email = user["uid"], user["email"]
+    if not AUTH_DISABLED:
+        get_or_create_user(uid, email)
+        if not can_run_pipeline(uid):
+            raise HTTPException(status_code=402, detail="Free run already used; payment required")
+        consume_free_use(uid)
     loop = asyncio.get_running_loop()
     job_id, _, emit = _make_job(loop)
 
@@ -119,7 +135,13 @@ async def run(req: RunRequest, authorization: str | None = Header(default=None))
 
 @app.post("/session")
 async def create_session(req: SessionRequest, authorization: str | None = Header(default=None)):
-    _verify(authorization)
+    user = _verify(authorization)
+    uid, email = user["uid"], user["email"]
+    if not AUTH_DISABLED:
+        get_or_create_user(uid, email)
+        if not can_run_pipeline(uid):
+            raise HTTPException(status_code=402, detail="Free run already used; payment required")
+        consume_free_use(uid)
     session_id = str(uuid.uuid4())
     _sessions[session_id] = {
         "form_url": req.form_url,
@@ -135,7 +157,9 @@ async def create_session(req: SessionRequest, authorization: str | None = Header
 
 @app.get("/session/{session_id}")
 async def get_session(session_id: str, authorization: str | None = Header(default=None)):
-    _verify(authorization)
+    user = _verify(authorization)
+    if not AUTH_DISABLED:
+        get_or_create_user(user["uid"], user["email"])
     if session_id not in _sessions:
         raise HTTPException(status_code=404, detail="Session not found")
     s = _sessions[session_id]
@@ -149,7 +173,9 @@ async def get_session(session_id: str, authorization: str | None = Header(defaul
 
 @app.post("/session/{session_id}/advance")
 async def advance_session(session_id: str, authorization: str | None = Header(default=None)):
-    _verify(authorization)
+    user = _verify(authorization)
+    if not AUTH_DISABLED:
+        get_or_create_user(user["uid"], user["email"])
     if session_id not in _sessions:
         raise HTTPException(status_code=404, detail="Session not found")
     s = _sessions[session_id]
@@ -206,7 +232,9 @@ async def advance_session(session_id: str, authorization: str | None = Header(de
 
 @app.get("/stream/{job_id}")
 async def stream(job_id: str, authorization: str | None = Header(default=None)):
-    _verify(authorization)
+    user = _verify(authorization)
+    if not AUTH_DISABLED:
+        get_or_create_user(user["uid"], user["email"])
     if job_id not in _jobs:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -223,7 +251,9 @@ async def stream(job_id: str, authorization: str | None = Header(default=None)):
 
 @app.get("/result/{job_id}")
 async def result(job_id: str, authorization: str | None = Header(default=None)):
-    _verify(authorization)
+    user = _verify(authorization)
+    if not AUTH_DISABLED:
+        get_or_create_user(user["uid"], user["email"])
     if job_id not in _jobs:
         raise HTTPException(status_code=404, detail="Job not found")
     job = _jobs[job_id]
@@ -232,3 +262,48 @@ async def result(job_id: str, authorization: str | None = Header(default=None)):
     if job["status"] == "error":
         return {"status": "error", "error": job.get("error", "unknown")}
     return {"status": "done", "total": len(job["result"]), "responses": job["result"]}
+
+
+@app.post("/webhook/kofi")
+async def webhook_kofi(data: str = Form(...)):
+    """Unauthenticated Ko-fi payment webhook. Secured by verification_token."""
+    kofi_token = os.getenv("KOFI_VERIFICATION_TOKEN", "")
+
+    try:
+        payload = json.loads(data)
+    except (json.JSONDecodeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid payload")
+
+    if payload.get("verification_token") != kofi_token:
+        raise HTTPException(status_code=403, detail="Invalid verification token")
+
+    try:
+        amount = float(payload.get("amount", 0))
+    except (TypeError, ValueError):
+        return {"ok": True}
+
+    if amount < 5.0:
+        return {"ok": True}
+
+    message = payload.get("message") or ""
+    match = re.search(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", message)
+    if not match:
+        return {"ok": True}
+
+    email = match.group(0)
+    try:
+        kofi_user = firebase_auth.get_user_by_email(email)
+    except Exception:
+        return {"ok": True}
+
+    mark_paid(kofi_user.uid, email, amount)
+    return {"ok": True}
+
+
+@app.get("/user/status")
+async def user_status(authorization: str | None = Header(default=None)):
+    user = _verify(authorization)
+    if AUTH_DISABLED:
+        return {"free_used": False, "paid": False}
+    get_or_create_user(user["uid"], user["email"])
+    return get_user_status(user["uid"])

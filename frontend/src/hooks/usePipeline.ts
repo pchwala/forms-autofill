@@ -4,7 +4,7 @@ const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 const API_KEY = import.meta.env.VITE_API_KEY ?? 'test-key';
 
 export type StepStatus = 'pending' | 'active' | 'done';
-export type PipelineStatus = 'idle' | 'running' | 'paused' | 'done' | 'error';
+export type PipelineStatus = 'idle' | 'running' | 'paused' | 'done' | 'error' | 'blocked';
 
 export interface StepInfo {
   label: string;
@@ -184,6 +184,10 @@ export function usePipeline(getToken: () => Promise<string>) {
         headers: await buildHeaders(getToken),
         body: JSON.stringify({ form_url: formUrl, total_responses: totalResponses }),
       });
+      if (res.status === 402) {
+        setStatus('blocked');
+        return;
+      }
       if (!res.ok) throw new Error(`Failed to start: ${res.status}`);
       const { job_id } = (await res.json()) as { job_id: string };
       await openStream(job_id);
@@ -205,6 +209,10 @@ export function usePipeline(getToken: () => Promise<string>) {
         headers: await buildHeaders(getToken),
         body: JSON.stringify({ form_url: formUrl, total_responses: totalResponses }),
       });
+      if (res.status === 402) {
+        setStatus('blocked');
+        return;
+      }
       if (!res.ok) throw new Error(`Failed to create session: ${res.status}`);
       const { session_id } = (await res.json()) as { session_id: string };
       setSessionId(session_id);
