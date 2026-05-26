@@ -15,8 +15,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-# trigger build
-
 from .orchestrator import (
     run_pipeline,
     step1_extract,
@@ -35,18 +33,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+def _load_firebase_credentials() -> credentials.Base:
+    creds_env = os.getenv("FIREBASE_CREDENTIALS_JSON", "").strip()
+    if not creds_env:
+        raise ValueError("FIREBASE_CREDENTIALS_JSON is required")
+
+    # Accept either a file path or raw JSON content in the env var.
+    if pathlib.Path(creds_env).is_file():
+        return credentials.Certificate(creds_env)
+
+    try:
+        creds_data = json.loads(creds_env)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "FIREBASE_CREDENTIALS_JSON must be a valid JSON string or a file path"
+        ) from exc
+
+    return credentials.Certificate(creds_data)
+
+
 AUTH_DISABLED = os.getenv("AUTH_DISABLED", "false").lower() == "true"
 
 if not AUTH_DISABLED:
-    cred_path = "/app/backend/firebase_credentials.json"
-    if pathlib.Path(cred_path).is_file():
-        _cred = credentials.Certificate(cred_path)
-    else:
-        _creds_json = os.getenv("FIREBASE_CREDENTIALS_JSON")
-        if _creds_json:
-            _cred = credentials.Certificate(json.loads(_creds_json))
-        else:
-            _cred = credentials.ApplicationDefault()
+    _cred = _load_firebase_credentials()
     firebase_admin.initialize_app(_cred)
 
 _jobs: dict[str, dict] = {}
