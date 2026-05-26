@@ -7,9 +7,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-ENV PORT=8080
+ENV PORT=8000
 ENV AUTH_DISABLED=false
-ENV FIREBASE_CREDENTIALS_JSON=
-EXPOSE 8080
+ENV FIREBASE_CREDENTIALS_JSON=./firebase_credentials.json
+EXPOSE 8000
 
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
