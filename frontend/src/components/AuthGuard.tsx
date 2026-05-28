@@ -4,7 +4,6 @@ import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import GoogleIcon from '@mui/icons-material/Google';
 import { type ReactNode } from 'react';
 import { AUTH_DISABLED } from '../firebase';
@@ -43,20 +42,6 @@ export default function AuthGuard({ children }: Props) {
           textAlign: 'center',
         }}
       >
-        <Box
-          sx={{
-            width: 64,
-            height: 64,
-            borderRadius: '16px',
-            background: 'linear-gradient(135deg, #1976d2 0%, #9c27b0 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 4px 20px rgba(25,118,210,0.4)',
-          }}
-        >
-          <AutoAwesomeIcon sx={{ fontSize: 32, color: '#fff' }} />
-        </Box>
         <Box>
           <Typography
             variant="h4"

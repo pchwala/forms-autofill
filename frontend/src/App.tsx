@@ -15,7 +15,6 @@ import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import FavoriteIcon from '@mui/icons-material/Favorite';
 import LinkIcon from '@mui/icons-material/Link';
 import SendIcon from '@mui/icons-material/Send';
@@ -119,22 +118,6 @@ export default function App() {
 
         {/* ── Hero ── */}
         <Box sx={{ textAlign: 'center', mb: 6 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
-            <Box
-              sx={{
-                width: 64,
-                height: 64,
-                borderRadius: '16px',
-                background: 'linear-gradient(135deg, #1976d2 0%, #9c27b0 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 4px 20px rgba(25,118,210,0.4)',
-              }}
-            >
-              <AutoAwesomeIcon sx={{ fontSize: 32, color: '#fff' }} />
-            </Box>
-          </Box>
           <Typography
             variant="h3"
             sx={{
