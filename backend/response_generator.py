@@ -6,6 +6,8 @@ from typing import Callable
 
 from openai import OpenAI
 
+import backend.stub as stub
+
 
 class ResponseGenerator:
     """Generates persona-driven survey responses via the OpenAI API.
@@ -274,32 +276,38 @@ class ResponseGenerator:
         model = "gpt-4.1"
         all_responses: list = []
 
-        for persona in personas:
-            code, name, count = persona["code"], persona["name"], persona["count"]
-            # Build a focused system prompt containing only this persona's data.
-            strategy_text = self._format_strategy_json(strategy, active_persona_code=code)
-            system_prompt = self._build_system_prompt(strategy_text)
-            msg = (
-                f"Generating {count} responses for persona {code} — {name} "
-                f"(~{len(system_prompt) // 4} input tokens in system prompt)..."
-            )
-            print(msg)
+        if stub.is_stub():
+            stub.stub_sleep()
+            all_responses = stub.make_stub_responses(config, personas)
             if emit:
-                emit({"type": "message", "text": f"Generating {count} responses for persona {code} — {name}"})
-            completion = self._client.chat.completions.create(
-                model=model,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": self._build_user_prompt(code, name, count)},
-                ],
-            )
-            batch = json.loads(completion.choices[0].message.content)["responses"]
-            msg2 = f"  Got {len(batch)} responses."
-            print(msg2)
-            if emit:
-                emit({"type": "message", "text": msg2})
-            all_responses.extend(batch)
+                emit({"type": "message", "text": f"[STUB] Generated {len(all_responses)} stub responses (no API call)"})
+        else:
+            for persona in personas:
+                code, name, count = persona["code"], persona["name"], persona["count"]
+                # Build a focused system prompt containing only this persona's data.
+                strategy_text = self._format_strategy_json(strategy, active_persona_code=code)
+                system_prompt = self._build_system_prompt(strategy_text)
+                msg = (
+                    f"Generating {count} responses for persona {code} — {name} "
+                    f"(~{len(system_prompt) // 4} input tokens in system prompt)..."
+                )
+                print(msg)
+                if emit:
+                    emit({"type": "message", "text": f"Generating {count} responses for persona {code} — {name}"})
+                completion = self._client.chat.completions.create(
+                    model=model,
+                    response_format={"type": "json_object"},
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": self._build_user_prompt(code, name, count)},
+                    ],
+                )
+                batch = json.loads(completion.choices[0].message.content)["responses"]
+                msg2 = f"  Got {len(batch)} responses."
+                print(msg2)
+                if emit:
+                    emit({"type": "message", "text": msg2})
+                all_responses.extend(batch)
 
         if output_file is not None:
             dest = pathlib.Path(output_file)

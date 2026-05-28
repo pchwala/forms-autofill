@@ -25,6 +25,8 @@ from typing import Callable
 from dotenv import load_dotenv
 from openai import OpenAI
 
+import backend.stub as stub
+
 load_dotenv()
 
 
@@ -194,6 +196,10 @@ class StrategyGenerator:
     # ------------------------------------------------------------------
 
     def _step1_web_search(self) -> dict:
+        if stub.is_stub():
+            stub.stub_sleep()
+            return stub.make_stub_research_basis()
+
         config = self._config
         form_title = config.get("form_title", "survey")
         labels = [q["label"] for q in config["questions"]]
@@ -245,6 +251,10 @@ Return ONLY a JSON object matching this schema exactly (no markdown, no explanat
     # ------------------------------------------------------------------
 
     def _step2_analyze(self, research_basis: dict) -> dict:
+        if stub.is_stub():
+            stub.stub_sleep()
+            return stub.make_stub_analysis(self._config)
+
         config = self._config
         q_summary = _build_question_summary(config["questions"], config.get("routing", []))
         routing_json = json.dumps(config.get("routing", []), ensure_ascii=False, indent=2)
@@ -344,6 +354,10 @@ Return ONLY a JSON object with this schema (no markdown, no explanation):
     # ------------------------------------------------------------------
 
     def _step3_compile(self, research_basis: dict, research_analysis: dict) -> dict:
+        if stub.is_stub():
+            stub.stub_sleep()
+            return stub.make_stub_strategy(self._config, research_basis, research_analysis)
+
         config = self._config
         q_summary = _build_question_summary(config["questions"], config.get("routing", []))
 
