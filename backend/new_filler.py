@@ -134,7 +134,7 @@ def main() -> None:
     config_path = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "data/form_config.json")
     config = json.loads(config_path.read_text(encoding="utf-8"))
 
-    responses_path = sys.argv[2] if len(sys.argv) > 2 else config.get("output_file", "data/responses_1.json")
+    responses_path = sys.argv[2] if len(sys.argv) > 2 else config.get("output_file", "data/responses.json")
     start = int(sys.argv[3]) if len(sys.argv) > 3 else 0
     count = int(sys.argv[4]) if len(sys.argv) > 4 else 1
 
