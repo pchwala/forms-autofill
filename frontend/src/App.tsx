@@ -3,6 +3,7 @@ import { keyframes } from '@mui/system';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import TextField from '@mui/material/TextField';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Chip from '@mui/material/Chip';
@@ -53,6 +54,7 @@ const HOW_IT_WORKS = [
 export default function App() {
   const { getToken } = useAuth();
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [resubmitCount, setResubmitCount] = useState(100);
   const { freeUsed, paid, refresh: refreshStatus } = useUserStatus(getToken);
   const {
     status,
@@ -61,9 +63,12 @@ export default function App() {
     results,
     error,
     submitProgress,
+    resultId,
+    sessionId,
     startFullPipeline,
     createSession,
     advanceSession,
+    resubmit,
     reset,
   } = usePipeline(getToken);
 
@@ -73,18 +78,28 @@ export default function App() {
   const isDone = status === 'done';
   const isError = status === 'error';
   const isBlocked = status === 'blocked';
+  const canResubmit = isDone && (resultId !== null || sessionId !== null);
 
   useEffect(() => {
     if (isBlocked) void refreshStatus();
   }, [isBlocked, refreshStatus]);
 
   async function handleStart(url: string, count: number, mode: PipelineMode) {
+    setResubmitCount(count);
     try {
       if (mode === 'full') {
         await startFullPipeline(url, count);
       } else {
         await createSession(url, count);
       }
+    } catch {
+      // error state already set inside the hook
+    }
+  }
+
+  async function handleResubmit() {
+    try {
+      await resubmit(resubmitCount);
     } catch {
       // error state already set inside the hook
     }
@@ -243,7 +258,12 @@ export default function App() {
               }}
             >
               {submitProgress
-                ? `Submitting responses to Google Form — ${submitProgress.current}/${submitProgress.total}`
+                ? (() => {
+                    const batchInfo = submitProgress.totalBatches && submitProgress.totalBatches > 1
+                      ? `Batch ${submitProgress.batch}/${submitProgress.totalBatches} — `
+                      : '';
+                    return `${batchInfo}Submitting responses to Google Form — ${submitProgress.current}/${submitProgress.total}`;
+                  })()
                 : log[log.length - 1]}
             </Typography>
           )}
@@ -253,6 +273,27 @@ export default function App() {
             <Alert severity="success">
               Pipeline complete — all responses submitted successfully.
             </Alert>
+          )}
+
+          {/* Resubmit */}
+          {canResubmit && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+              <Typography variant="body2" color="text.secondary">
+                Submit again with existing AI responses:
+              </Typography>
+              <TextField
+                label="Count"
+                type="number"
+                value={resubmitCount}
+                onChange={(e) => setResubmitCount(Math.min(1000, Math.max(1, parseInt(e.target.value, 10) || 1)))}
+                size="small"
+                slotProps={{ htmlInput: { min: 1, max: 1000 } }}
+                sx={{ width: 100 }}
+              />
+              <Button variant="outlined" onClick={handleResubmit}>
+                Submit Again
+              </Button>
+            </Box>
           )}
 
           {/* Error state */}
@@ -283,7 +324,7 @@ export default function App() {
           </Box>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             Forms Autofill is free to try. If you find it useful, consider supporting development on Ko-fi —
-            a €5+ donation also unlocks unlimited pipeline runs for your account.
+            a €10+ donation also unlocks unlimited pipeline runs for your account.
           </Typography>
           <Button
             variant="contained"
