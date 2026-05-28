@@ -15,18 +15,21 @@ def _client():
 
 
 def get_or_create_user(uid: str, email: str) -> None:
-    """Upsert users/{uid} doc with email; leaves existing fields unchanged."""
+    """Create users/{uid} doc if it doesn't exist; never overwrites gating fields."""
     ref = _client().collection("users").document(uid)
-    ref.set(
-        {
-            "email": email,
-            "free_used": False,
-            "paid": False,
-            "paid_at": None,
-            "kofi_email": None,
-        },
-        merge=True,
-    )
+    doc = ref.get()
+    if doc.exists:
+        ref.update({"email": email})
+    else:
+        ref.set(
+            {
+                "email": email,
+                "free_used": False,
+                "paid": False,
+                "paid_at": None,
+                "kofi_email": None,
+            }
+        )
 
 
 def can_run_pipeline(uid: str) -> bool:

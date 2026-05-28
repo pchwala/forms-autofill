@@ -158,8 +158,6 @@ async def create_session(req: SessionRequest, authorization: str | None = Header
 @app.get("/session/{session_id}")
 async def get_session(session_id: str, authorization: str | None = Header(default=None)):
     user = _verify(authorization)
-    if not AUTH_DISABLED:
-        get_or_create_user(user["uid"], user["email"])
     if session_id not in _sessions:
         raise HTTPException(status_code=404, detail="Session not found")
     s = _sessions[session_id]
@@ -174,8 +172,6 @@ async def get_session(session_id: str, authorization: str | None = Header(defaul
 @app.post("/session/{session_id}/advance")
 async def advance_session(session_id: str, authorization: str | None = Header(default=None)):
     user = _verify(authorization)
-    if not AUTH_DISABLED:
-        get_or_create_user(user["uid"], user["email"])
     if session_id not in _sessions:
         raise HTTPException(status_code=404, detail="Session not found")
     s = _sessions[session_id]
@@ -235,8 +231,6 @@ async def advance_session(session_id: str, authorization: str | None = Header(de
 @app.get("/stream/{job_id}")
 async def stream(job_id: str, authorization: str | None = Header(default=None)):
     user = _verify(authorization)
-    if not AUTH_DISABLED:
-        get_or_create_user(user["uid"], user["email"])
     if job_id not in _jobs:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -259,8 +253,6 @@ async def stream(job_id: str, authorization: str | None = Header(default=None)):
 @app.get("/result/{job_id}")
 async def result(job_id: str, authorization: str | None = Header(default=None)):
     user = _verify(authorization)
-    if not AUTH_DISABLED:
-        get_or_create_user(user["uid"], user["email"])
     if job_id not in _jobs:
         raise HTTPException(status_code=404, detail="Job not found")
     job = _jobs[job_id]
@@ -312,5 +304,4 @@ async def user_status(authorization: str | None = Header(default=None)):
     user = _verify(authorization)
     if AUTH_DISABLED:
         return {"free_used": False, "paid": False}
-    get_or_create_user(user["uid"], user["email"])
     return get_user_status(user["uid"])
