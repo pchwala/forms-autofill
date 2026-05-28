@@ -15,7 +15,6 @@ import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
-import FavoriteIcon from '@mui/icons-material/Favorite';
 import LinkIcon from '@mui/icons-material/Link';
 import SendIcon from '@mui/icons-material/Send';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
@@ -286,47 +285,6 @@ export default function App() {
             </Alert>
           )}
         </Paper>
-
-        {/* ── Ko-fi support ── */}
-      <Card
-        variant="outlined"
-        sx={{
-          mb: 4,
-          bgcolor: '#1a1f26',
-          border: '1px solid #2d3136',
-          borderRadius: 2,
-          background: 'linear-gradient(135deg, rgba(25,118,210,0.05) 0%, rgba(156,39,176,0.05) 100%)',
-        }}
-      >
-        <CardContent sx={{ p: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-            <FavoriteIcon sx={{ color: '#e53935', fontSize: 20 }} />
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-              Support this project
-            </Typography>
-          </Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Forms Autofill is free to try. If you find it useful, consider supporting development on Ko-fi —
-            a €10+ donation also unlocks unlimited pipeline runs for your account.
-          </Typography>
-          <Button
-            variant="contained"
-            component="a"
-            href="https://ko-fi.com/pchwala"
-            target="_blank"
-            rel="noopener noreferrer"
-            startIcon={<FavoriteIcon />}
-            sx={{
-              bgcolor: '#FF5E5B',
-              color: '#fff',
-              fontWeight: 700,
-              '&:hover': { bgcolor: '#e54e4b' },
-            }}
-          >
-            Support on Ko-fi
-          </Button>
-        </CardContent>
-      </Card>
 
       {/* ── Footer ── */}
       <Box sx={{ textAlign: 'center', py: 2, borderTop: '1px solid #2d3136' }}>

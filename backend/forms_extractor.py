@@ -43,8 +43,12 @@ def _next_config_path(data_dir: pathlib.Path) -> pathlib.Path:
     return data_dir / f"form_config_{n}.json"
 
 
-def _fetch_form_data(form_url: str) -> list:
-    """Fetch the Google Form page and return the parsed FB_PUBLIC_LOAD_DATA_ array."""
+def _fetch_form_data(form_url: str) -> tuple[list, str]:
+    """Fetch the Google Form page and return (FB_PUBLIC_LOAD_DATA_ array, resolved_url).
+
+    The resolved_url is the final URL after any redirects (e.g. forms.gle short links
+    redirect to the full docs.google.com/forms/.../viewform URL).
+    """
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -68,7 +72,7 @@ def _fetch_form_data(form_url: str) -> list:
     # regardless of what follows (semicolons, script tags, etc.).
     decoder = json.JSONDecoder()
     data, _ = decoder.raw_decode(resp.text[start:])
-    return data
+    return data, resp.url
 
 
 def _derive_response_url(form_url: str) -> str:
@@ -318,7 +322,9 @@ def extract(
         Path to the written form_config_N.json file.
     """
     print(f"Fetching form: {form_url}")
-    fb_data = _fetch_form_data(form_url)
+    fb_data, resolved_url = _fetch_form_data(form_url)
+    if resolved_url != form_url:
+        print(f"Resolved to: {resolved_url}")
 
     form_title, pages, questions, routing = _extract_structure(fb_data)
     _compute_routing_skips(routing, pages)
@@ -331,8 +337,8 @@ def extract(
         print(f"  Routing rules found on {len(routing)} question(s)")
 
     config = {
-        "form_url": form_url,
-        "form_response_url": _derive_response_url(form_url),
+        "form_url": resolved_url,
+        "form_response_url": _derive_response_url(resolved_url),
         "form_title": form_title,
         "output_file": output_file,
         "strategy_file": strategy_file,
