@@ -37,7 +37,13 @@ export function usePipeline(getToken: () => Promise<string>) {
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(0); // steps completed so far
-  const [submitProgress, setSubmitProgress] = useState<{ current: number; total: number } | null>(null);
+  const [submitProgress, setSubmitProgress] = useState<{
+    current: number;
+    total: number;
+    batch?: number;
+    totalBatches?: number;
+  } | null>(null);
+  const [resultId, setResultId] = useState<string | null>(null);
 
   const esRef = useRef<EventSource | null>(null);
 
@@ -129,7 +135,12 @@ export function usePipeline(getToken: () => Promise<string>) {
                 } else if (event.type === 'message') {
                   appendLog(event.text as string);
                 } else if (event.type === 'submit_progress') {
-                  setSubmitProgress({ current: event.current as number, total: event.total as number });
+                  setSubmitProgress({
+                    current: event.current as number,
+                    total: event.total as number,
+                    batch: event.batch as number | undefined,
+                    totalBatches: event.total_batches as number | undefined,
+                  });
                 } else if (event.type === 'result') {
                   setResults((prev) => ({ ...prev, [event.key as string]: event.data }));
                 } else if (event.type === 'step_complete') {
@@ -140,6 +151,8 @@ export function usePipeline(getToken: () => Promise<string>) {
                   setSubmitProgress(null);
                   setStatus('done');
                   setSteps((prev) => prev.map((s) => ({ ...s, status: 'done' })));
+                  if (event.result_id) setResultId(event.result_id as string);
+                  if (event.session_id) setSessionId(event.session_id as string);
                   resolve();
                 } else if (event.type === 'error') {
                   appendLog(`Error: ${event.message}`);
@@ -258,7 +271,46 @@ export function usePipeline(getToken: () => Promise<string>) {
     setSessionId(null);
     setCurrentStep(0);
     setSubmitProgress(null);
+    setResultId(null);
   }, [stopStream]);
+
+  const resubmit = useCallback(
+    async (totalResponses: number) => {
+      setStatus('running');
+      setLog([]);
+      setError(null);
+      setSubmitProgress(null);
+      // Reset only submit step to pending so stepper shows re-submission
+      setSteps((prev) =>
+        prev.map((s, i) => (i === 4 ? { ...s, status: 'pending' } : s)),
+      );
+
+      let res: Response;
+      // Prefer session resubmit if we have a live session, else fall back to result_id
+      if (sessionId) {
+        res = await fetch(`${API_URL}/session/${sessionId}/resubmit`, {
+          method: 'POST',
+          headers: await buildHeaders(getToken),
+          body: JSON.stringify({ total_responses: totalResponses }),
+        });
+      } else if (resultId) {
+        res = await fetch(`${API_URL}/resubmit`, {
+          method: 'POST',
+          headers: await buildHeaders(getToken),
+          body: JSON.stringify({ result_id: resultId, total_responses: totalResponses }),
+        });
+      } else {
+        setError('No completed pipeline result to resubmit.');
+        setStatus('error');
+        return;
+      }
+
+      if (!res.ok) throw new Error(`Resubmit failed: ${res.status}`);
+      const { job_id } = (await res.json()) as { job_id: string };
+      await openStream(job_id);
+    },
+    [getToken, openStream, resultId, sessionId],
+  );
 
   return {
     status,
@@ -269,9 +321,11 @@ export function usePipeline(getToken: () => Promise<string>) {
     sessionId,
     currentStep,
     submitProgress,
+    resultId,
     startFullPipeline,
     createSession,
     advanceSession,
+    resubmit,
     reset,
   };
 }

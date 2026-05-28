@@ -14,7 +14,7 @@ from firebase_admin import auth as firebase_auth, credentials, firestore as fb_f
 from fastapi import FastAPI, Form, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from .firestore_service import (
     can_run_pipeline,
@@ -100,10 +100,47 @@ class RunRequest(BaseModel):
     form_url: str
     total_responses: int = 100
 
+    @field_validator("total_responses")
+    @classmethod
+    def _validate_total(cls, v: int) -> int:
+        if not (1 <= v <= 1000):
+            raise ValueError("total_responses must be between 1 and 1000")
+        return v
+
 
 class SessionRequest(BaseModel):
     form_url: str
     total_responses: int = 100
+
+    @field_validator("total_responses")
+    @classmethod
+    def _validate_total(cls, v: int) -> int:
+        if not (1 <= v <= 1000):
+            raise ValueError("total_responses must be between 1 and 1000")
+        return v
+
+
+class ResubmitRequest(BaseModel):
+    result_id: str
+    total_responses: int
+
+    @field_validator("total_responses")
+    @classmethod
+    def _validate_total(cls, v: int) -> int:
+        if not (1 <= v <= 1000):
+            raise ValueError("total_responses must be between 1 and 1000")
+        return v
+
+
+class ResubmitSessionRequest(BaseModel):
+    total_responses: int
+
+    @field_validator("total_responses")
+    @classmethod
+    def _validate_total(cls, v: int) -> int:
+        if not (1 <= v <= 1000):
+            raise ValueError("total_responses must be between 1 and 1000")
+        return v
 
 
 @app.post("/run")
@@ -120,10 +157,11 @@ async def run(req: RunRequest, authorization: str | None = Header(default=None))
 
     def worker() -> None:
         try:
-            responses = run_pipeline(req.form_url, req.total_responses, emit)
+            config_path, responses = run_pipeline(req.form_url, req.total_responses, emit)
             _jobs[job_id]["status"] = "done"
             _jobs[job_id]["result"] = responses
-            emit({"type": "done", "total": len(responses)})
+            _jobs[job_id]["config_path"] = config_path
+            emit({"type": "done", "total": len(responses), "result_id": job_id})
         except Exception as exc:
             _jobs[job_id]["status"] = "error"
             _jobs[job_id]["error"] = str(exc)
@@ -194,6 +232,7 @@ async def advance_session(session_id: str, authorization: str | None = Header(de
         try:
             data_dir = pathlib.Path("data")
             data_dir.mkdir(exist_ok=True)
+            result = None
 
             if next_step == 1:
                 result = step1_extract(s["form_url"], data_dir, emit)
@@ -210,23 +249,21 @@ async def advance_session(session_id: str, authorization: str | None = Header(de
                 result = step4_shuffle(s["responses"], emit)
                 s["responses"] = result
             elif next_step == 5:
-                step5_submit(s["config_path"], s["responses"], emit)
+                step5_submit(s["config_path"], s["responses"], s["total_responses"], emit)
                 result = s["responses"]
 
             s["current_step"] = next_step
-            s["status"] = "done" if next_step == 5 else "idle"
+            s["status"] = "completed" if next_step == 5 else "idle"
             _jobs[job_id]["status"] = "done"
             _jobs[job_id]["result"] = result if next_step == 5 else None
             emit({"type": "step_complete", "step": next_step})
             if next_step == 5:
-                emit({"type": "done", "total": len(s["responses"])})
-                _sessions.pop(session_id, None)
+                emit({"type": "done", "total": len(s["responses"]), "session_id": session_id})
         except Exception as exc:
             s["status"] = "error"
             _jobs[job_id]["status"] = "error"
             _jobs[job_id]["error"] = str(exc)
             emit({"type": "error", "message": str(exc)})
-            _sessions.pop(session_id, None)
 
     threading.Thread(target=worker, daemon=True).start()
     return {"job_id": job_id, "step": next_step}
@@ -251,7 +288,7 @@ async def stream(job_id: str, authorization: str | None = Header(default=None)):
             yield f"data: {json.dumps(event)}\n\n"
             if event.get("type") in ("done", "error", "step_complete"):
                 break
-        _jobs.pop(job_id, None)
+        # Do NOT pop the job — it may be needed for resubmit
 
     return StreamingResponse(generator(), media_type="text/event-stream")
 
@@ -269,6 +306,71 @@ async def result(job_id: str, authorization: str | None = Header(default=None)):
     if job["status"] == "error":
         return {"status": "error", "error": job.get("error", "unknown")}
     return {"status": "done", "total": len(job["result"]), "responses": job["result"]}
+
+
+@app.post("/resubmit")
+async def resubmit(req: ResubmitRequest, authorization: str | None = Header(default=None)):
+    user = _verify(authorization)
+    if not AUTH_DISABLED:
+        get_or_create_user(user["uid"], user["email"])
+    job = _jobs.get(req.result_id)
+    if job is None or job["status"] != "done":
+        raise HTTPException(status_code=404, detail="Result not found or pipeline not complete")
+
+    config_path: pathlib.Path = job["config_path"]
+    responses: list[dict] = job["result"]
+
+    loop = asyncio.get_running_loop()
+    new_job_id, _, emit = _make_job(loop)
+
+    def worker() -> None:
+        try:
+            shuffled = step4_shuffle(responses, emit)
+            step5_submit(config_path, shuffled, req.total_responses, emit)
+            _jobs[new_job_id]["status"] = "done"
+            _jobs[new_job_id]["result"] = shuffled
+            _jobs[new_job_id]["config_path"] = config_path
+            emit({"type": "done", "total": req.total_responses, "result_id": new_job_id})
+        except Exception as exc:
+            _jobs[new_job_id]["status"] = "error"
+            _jobs[new_job_id]["error"] = str(exc)
+            emit({"type": "error", "message": str(exc)})
+
+    threading.Thread(target=worker, daemon=True).start()
+    return {"job_id": new_job_id}
+
+
+@app.post("/session/{session_id}/resubmit")
+async def resubmit_session(session_id: str, req: ResubmitSessionRequest, authorization: str | None = Header(default=None)):
+    user = _verify(authorization)
+    if not AUTH_DISABLED:
+        get_or_create_user(user["uid"], user["email"])
+    if session_id not in _sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    s = _sessions[session_id]
+    if s["status"] != "completed":
+        raise HTTPException(status_code=409, detail="Pipeline not complete; cannot resubmit")
+
+    config_path: pathlib.Path = s["config_path"]
+    responses: list[dict] = s["responses"]
+
+    loop = asyncio.get_running_loop()
+    job_id, _, emit = _make_job(loop)
+
+    def worker() -> None:
+        try:
+            shuffled = step4_shuffle(responses, emit)
+            step5_submit(config_path, shuffled, req.total_responses, emit)
+            _jobs[job_id]["status"] = "done"
+            _jobs[job_id]["result"] = shuffled
+            emit({"type": "done", "total": req.total_responses, "session_id": session_id})
+        except Exception as exc:
+            _jobs[job_id]["status"] = "error"
+            _jobs[job_id]["error"] = str(exc)
+            emit({"type": "error", "message": str(exc)})
+
+    threading.Thread(target=worker, daemon=True).start()
+    return {"job_id": job_id}
 
 
 @app.post("/webhook/kofi")
@@ -289,7 +391,7 @@ async def webhook_kofi(data: str = Form(...)):
     except (TypeError, ValueError):
         return {"ok": True}
 
-    if amount < 5.0:
+    if amount < 10.0:
         return {"ok": True}
 
     message = payload.get("message") or ""

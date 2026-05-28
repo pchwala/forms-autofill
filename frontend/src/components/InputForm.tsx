@@ -29,14 +29,14 @@ export default function InputForm({ onStart, disabled, freeUsed, paid }: Props) 
           You've used your free run.
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Donate €5+ on Ko-fi and write your Google account email in the payment
+          Donate €10+ on Ko-fi and write your Google account email in the payment
           message to unlock unlimited access.
         </Typography>
         <Box>
           <Button
             variant="contained"
             component="a"
-            href="https://ko-fi.com"
+            href="https://ko-fi.com/pchwala"
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -64,10 +64,10 @@ export default function InputForm({ onStart, disabled, freeUsed, paid }: Props) 
           label="Number of responses"
           type="number"
           value={count}
-          onChange={(e) => setCount(Math.max(1, parseInt(e.target.value, 10) || 1))}
+          onChange={(e) => setCount(Math.min(1000, Math.max(1, parseInt(e.target.value, 10) || 1)))}
           disabled={disabled}
           size="small"
-          slotProps={{ htmlInput: { min: 1 } }}
+          slotProps={{ htmlInput: { min: 1, max: 1000 } }}
           sx={{ width: 200 }}
         />
       </Box>
