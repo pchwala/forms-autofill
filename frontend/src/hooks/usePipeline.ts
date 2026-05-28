@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
-const API_KEY = import.meta.env.VITE_API_KEY ?? 'test-key';
 
 export type StepStatus = 'pending' | 'active' | 'done';
 export type PipelineStatus = 'idle' | 'running' | 'paused' | 'done' | 'error' | 'blocked';
@@ -84,12 +83,6 @@ export function usePipeline(getToken: () => Promise<string>) {
     (jobId: string): Promise<void> => {
       return new Promise((resolve, reject) => {
         stopStream();
-        const url = `${API_URL}/stream/${jobId}?x_api_key=${encodeURIComponent(API_KEY)}`;
-        // SSE doesn't support custom headers, so we pass the key as a query param.
-        // The backend currently uses the Header() mechanism; we need to proxy or
-        // adjust. For now, use fetch-based polling fallback via EventSource with
-        // the key in the URL only if backend supports it. We'll use a fetch stream.
-        void url; // suppress unused warning; we use fetch below
 
         const controller = new AbortController();
         esRef.current = { close: () => controller.abort() } as unknown as EventSource;
@@ -192,7 +185,7 @@ export function usePipeline(getToken: () => Promise<string>) {
       const { job_id } = (await res.json()) as { job_id: string };
       await openStream(job_id);
     },
-    [appendLog, openStream],
+    [appendLog, getToken, openStream],
   );
 
   const createSession = useCallback(
@@ -232,7 +225,7 @@ export function usePipeline(getToken: () => Promise<string>) {
         setStatus('paused');
       }
     },
-    [appendLog, openStream],
+    [appendLog, getToken, openStream],
   );
 
   const advanceSession = useCallback(async () => {
@@ -253,7 +246,7 @@ export function usePipeline(getToken: () => Promise<string>) {
     if (step < 5) {
       setStatus('paused');
     }
-  }, [appendLog, openStream, sessionId]);
+  }, [appendLog, getToken, openStream, sessionId]);
 
   const reset = useCallback(() => {
     stopStream();

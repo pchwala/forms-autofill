@@ -7,7 +7,7 @@ import pathlib
 import re
 import threading
 import uuid
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Callable
 
 import firebase_admin
 from firebase_admin import auth as firebase_auth, credentials, firestore as fb_firestore
@@ -36,7 +36,7 @@ app = FastAPI(title="Forms Autofill API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
+    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173").split(","),
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
@@ -85,7 +85,7 @@ def _verify(authorization: str | None) -> dict[str, str]:
     return {"uid": decoded["uid"], "email": decoded.get("email", "")}
 
 
-def _make_job(loop: asyncio.AbstractEventLoop) -> tuple[str, asyncio.Queue, callable]:
+def _make_job(loop: asyncio.AbstractEventLoop) -> tuple[str, asyncio.Queue, Callable[[dict], None]]:
     job_id = str(uuid.uuid4())
     queue: asyncio.Queue = asyncio.Queue()
     _jobs[job_id] = {"status": "running", "queue": queue, "result": None}
@@ -220,11 +220,13 @@ async def advance_session(session_id: str, authorization: str | None = Header(de
             emit({"type": "step_complete", "step": next_step})
             if next_step == 5:
                 emit({"type": "done", "total": len(s["responses"])})
+                _sessions.pop(session_id, None)
         except Exception as exc:
             s["status"] = "error"
             _jobs[job_id]["status"] = "error"
             _jobs[job_id]["error"] = str(exc)
             emit({"type": "error", "message": str(exc)})
+            _sessions.pop(session_id, None)
 
     threading.Thread(target=worker, daemon=True).start()
     return {"job_id": job_id, "step": next_step}
@@ -241,10 +243,15 @@ async def stream(job_id: str, authorization: str | None = Header(default=None)):
     async def generator() -> AsyncGenerator[str, None]:
         q = _jobs[job_id]["queue"]
         while True:
-            event = await q.get()
+            try:
+                event = await asyncio.wait_for(q.get(), timeout=30)
+            except asyncio.TimeoutError:
+                yield 'data: {"type":"ping"}\n\n'
+                continue
             yield f"data: {json.dumps(event)}\n\n"
             if event.get("type") in ("done", "error", "step_complete"):
                 break
+        _jobs.pop(job_id, None)
 
     return StreamingResponse(generator(), media_type="text/event-stream")
 

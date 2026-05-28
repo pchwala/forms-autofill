@@ -2,6 +2,9 @@
 
 **Goal**: Each authenticated user gets one free pipeline run. After that, a one-time Ko-fi payment of €5+ (any currency) unlocks unlimited access. User links their payment by writing their Google account email in the Ko-fi donation message.
 
+### Production TODO
+- [] Remove stub switch for AI usage
+
 ### Decisions
 - 1 use = pipeline fully completes (step 5 submits responses), either mode
 - After payment: unlimited forever (one-time)
