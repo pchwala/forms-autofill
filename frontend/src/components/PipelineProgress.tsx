@@ -16,7 +16,7 @@ interface Props {
 // Styled connector line between circles
 const PipelineConnector = styled(StepConnector)(({ theme }) => ({
   [`&.${stepConnectorClasses.alternativeLabel}`]: {
-    top: 18,
+    top: 11,
   },
   [`&.${stepConnectorClasses.active}`]: {
     [`& .${stepConnectorClasses.line}`]: {
