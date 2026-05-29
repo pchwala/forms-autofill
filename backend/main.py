@@ -401,7 +401,10 @@ async def get_history(authorization: str | None = Header(default=None)):
     user = _verify(authorization)
     if AUTH_DISABLED:
         return []
-    pipelines = get_user_pipelines(user["uid"])
+    try:
+        pipelines = get_user_pipelines(user["uid"])
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     for p in pipelines:
         for key in ("created_at", "completed_at"):
             val = p.get(key)
