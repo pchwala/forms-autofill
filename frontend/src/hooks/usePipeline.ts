@@ -312,6 +312,29 @@ export function usePipeline(getToken: () => Promise<string>) {
     [getToken, openStream, resultId, sessionId],
   );
 
+  const resubmitFromHistory = useCallback(
+    async (pipelineId: string, totalResponses: number) => {
+      setStatus('running');
+      setSteps(makeSteps());
+      setLog([]);
+      setResults({});
+      setError(null);
+      setSubmitProgress(null);
+      setResultId(null);
+      setSessionId(null);
+
+      const res = await fetch(`${API_URL}/history/${pipelineId}/resubmit`, {
+        method: 'POST',
+        headers: await buildHeaders(getToken),
+        body: JSON.stringify({ total_responses: totalResponses }),
+      });
+      if (!res.ok) throw new Error(`History resubmit failed: ${res.status}`);
+      const { job_id } = (await res.json()) as { job_id: string };
+      await openStream(job_id);
+    },
+    [getToken, openStream],
+  );
+
   return {
     status,
     steps,
@@ -326,6 +349,7 @@ export function usePipeline(getToken: () => Promise<string>) {
     createSession,
     advanceSession,
     resubmit,
+    resubmitFromHistory,
     reset,
   };
 }

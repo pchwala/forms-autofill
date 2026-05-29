@@ -7,9 +7,7 @@ import Typography from '@mui/material/Typography';
 import GoogleIcon from '@mui/icons-material/Google';
 import { type ReactNode } from 'react';
 import { AUTH_DISABLED } from '../firebase';
-import { useAuth } from '../hooks/useAuth';
-
-interface Props {
+import { useAuth } from '../hooks/useAuth';interface Props {
   children: ReactNode;
 }
 
@@ -94,14 +92,5 @@ export default function AuthGuard({ children }: Props) {
     );
   }
 
-  return (
-    <>
-      <Box sx={{ position: 'fixed', top: 16, right: 16, zIndex: 1200 }}>
-        <Button variant="outlined" size="small" onClick={() => void signOut()}>
-          Sign out
-        </Button>
-      </Box>
-      {children}
-    </>
-  );
+  return <>{children}</>;
 }

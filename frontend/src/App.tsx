@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { keyframes } from '@mui/system';
 import Alert from '@mui/material/Alert';
+import AppBar from '@mui/material/AppBar';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
@@ -14,16 +15,20 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import Paper from '@mui/material/Paper';
+import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 import LinkIcon from '@mui/icons-material/Link';
 import SendIcon from '@mui/icons-material/Send';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import InputForm, { type PipelineMode } from './components/InputForm';
 import PipelineProgress from './components/PipelineProgress';
+import UserMenu from './components/UserMenu';
+import HistoryDialog from './components/HistoryDialog';
 import { usePipeline } from './hooks/usePipeline';
 import { useAuth } from './hooks/useAuth';
 import { useUserStatus } from './hooks/useUserStatus';
 import AuthGuard from './components/AuthGuard';
+import { AUTH_DISABLED } from './firebase';
 
 const HOW_IT_WORKS = [
   {
@@ -50,8 +55,11 @@ const HOW_IT_WORKS = [
 ];
 
 export default function App() {
-  const { getToken } = useAuth();
+  const { getToken, user, signOut } = useAuth();
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyRecord, setHistoryRecord] = useState<{ pipelineId: string; formTitle: string; totalResponses: number } | null>(null);
+  const [historyResubmitCount, setHistoryResubmitCount] = useState(100);
   const [resubmitCount, setResubmitCount] = useState(100);
   const { freeUsed, paid, refresh: refreshStatus } = useUserStatus(getToken);
   const {
@@ -67,6 +75,7 @@ export default function App() {
     createSession,
     advanceSession,
     resubmit,
+    resubmitFromHistory,
     reset,
   } = usePipeline(getToken);
 
@@ -111,8 +120,39 @@ export default function App() {
     }
   }
 
+  function handleHistorySelect(pipelineId: string, totalResponses: number, formTitle: string) {
+    reset();
+    setHistoryRecord({ pipelineId, formTitle, totalResponses });
+    setHistoryResubmitCount(totalResponses);
+    setHistoryOpen(false);
+  }
+
+  async function handleHistoryResubmit() {
+    if (!historyRecord) return;
+    try {
+      await resubmitFromHistory(historyRecord.pipelineId, historyResubmitCount);
+    } catch {
+      // error state already set inside the hook
+    }
+  }
+
   return (
     <AuthGuard>
+      <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+        {!AUTH_DISABLED && user && (
+          <AppBar position="sticky" elevation={0} sx={{ bgcolor: '#1a1f26', borderBottom: '1px solid #2d3136' }}>
+            <Toolbar variant="dense">
+              <Box sx={{ flexGrow: 1 }} />
+              <UserMenu user={user} onSignOut={() => void signOut()} onHistory={() => setHistoryOpen(true)} />
+            </Toolbar>
+          </AppBar>
+        )}
+        <HistoryDialog
+          open={historyOpen}
+          onClose={() => setHistoryOpen(false)}
+          getToken={getToken}
+          onSelect={handleHistorySelect}
+        />
       <Container maxWidth="md" sx={{ py: 6 }}>
 
         {/* ── Hero ── */}
@@ -193,6 +233,38 @@ export default function App() {
           Run the pipeline
         </Typography>
         <Paper variant="outlined" sx={{ p: 3, mt: 1.5, mb: 4, display: 'flex', flexDirection: 'column', gap: 3, bgcolor: '#1a1f26', border: '1px solid #2d3136', borderRadius: 2 }}>
+          {/* History resubmit panel */}
+          {historyRecord && isIdle && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.25 }}>
+                  Resubmit from History
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {historyRecord.formTitle || 'Untitled form'}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                <TextField
+                  label="Responses"
+                  type="number"
+                  value={historyResubmitCount}
+                  onChange={(e) => setHistoryResubmitCount(Math.min(1000, Math.max(1, parseInt(e.target.value, 10) || 1)))}
+                  size="small"
+                  slotProps={{ htmlInput: { min: 1, max: 1000 } }}
+                  sx={{ width: 120 }}
+                />
+                <Button variant="contained" onClick={() => void handleHistoryResubmit()}>
+                  Resubmit
+                </Button>
+                <Button variant="outlined" color="error" onClick={() => setHistoryRecord(null)}>
+                  Cancel
+                </Button>
+              </Box>
+              <Divider />
+            </Box>
+          )}
+
           {/* Input form — always visible, disabled while running */}
           <InputForm onStart={handleStart} disabled={isRunning || isPaused || isDone} freeUsed={freeUsed} paid={paid} />
 
@@ -351,6 +423,7 @@ export default function App() {
         </DialogActions>
       </Dialog>
       </Container>
+      </Box>
     </AuthGuard>
   );
 }

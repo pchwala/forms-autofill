@@ -1,0 +1,133 @@
+import { useEffect, useState } from 'react';
+import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import Chip from '@mui/material/Chip';
+import CircularProgress from '@mui/material/CircularProgress';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogTitle from '@mui/material/DialogTitle';
+import List from '@mui/material/List';
+import ListItem from '@mui/material/ListItem';
+import ListItemButton from '@mui/material/ListItemButton';
+import ListItemText from '@mui/material/ListItemText';
+import Typography from '@mui/material/Typography';
+
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+
+export interface PipelineRecord {
+  pipeline_id: string;
+  form_title: string;
+  form_url: string;
+  total_responses: number;
+  status: 'completed' | 'failed' | 'in_progress';
+  created_at: string;
+  completed_at: string | null;
+}
+
+interface Props {
+  open: boolean;
+  onClose: () => void;
+  getToken: () => Promise<string>;
+  onSelect: (pipelineId: string, totalResponses: number, formTitle: string) => void;
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+const STATUS_CHIP: Record<string, { label: string; color: 'success' | 'error' | 'warning' }> = {
+  completed: { label: 'Completed', color: 'success' },
+  failed: { label: 'Failed', color: 'error' },
+  in_progress: { label: 'In progress', color: 'warning' },
+};
+
+export default function HistoryDialog({ open, onClose, getToken, onSelect }: Props) {
+  const [records, setRecords] = useState<PipelineRecord[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    setError(null);
+
+    getToken()
+      .then((token) =>
+        fetch(`${API_URL}/history`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
+      )
+      .then((res) => {
+        if (!res.ok) throw new Error(`Failed to load history: ${res.status}`);
+        return res.json() as Promise<PipelineRecord[]>;
+      })
+      .then((data) => {
+        setRecords(data);
+        setLoading(false);
+      })
+      .catch((err: Error) => {
+        setError(err.message);
+        setLoading(false);
+      });
+  }, [open, getToken]);
+
+  function handleSelect(record: PipelineRecord) {
+    onSelect(record.pipeline_id, record.total_responses, record.form_title);
+  }
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>History</DialogTitle>
+      <DialogContent dividers sx={{ p: 0 }}>
+        {loading && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+            <CircularProgress size={28} />
+          </Box>
+        )}
+        {!loading && error && (
+          <Box sx={{ p: 2 }}>
+            <Alert severity="error">{error}</Alert>
+          </Box>
+        )}
+        {!loading && !error && records.length === 0 && (
+          <Box sx={{ p: 3, textAlign: 'center' }}>
+            <Typography variant="body2" color="text.secondary">
+              No history yet. Complete a pipeline run to see it here.
+            </Typography>
+          </Box>
+        )}
+        {!loading && !error && records.length > 0 && (
+          <List disablePadding>
+            {records.map((record, idx) => {
+              const chip = STATUS_CHIP[record.status] ?? { label: record.status, color: 'warning' as const };
+              const disabled = record.status !== 'completed';
+              return (
+                <ListItem
+                  key={record.pipeline_id}
+                  disablePadding
+                  divider={idx < records.length - 1}
+                  secondaryAction={
+                    <Chip label={chip.label} color={chip.color} size="small" variant="outlined" />
+                  }
+                >
+                  <ListItemButton onClick={() => handleSelect(record)} disabled={disabled} sx={{ pr: 10 }}>
+                    <ListItemText
+                      primary={record.form_title || 'Untitled'}
+                      secondary={`${formatDate(record.created_at)} · ${record.total_responses} responses`}
+                    />
+                  </ListItemButton>
+                </ListItem>
+              );
+            })}
+          </List>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Close</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
