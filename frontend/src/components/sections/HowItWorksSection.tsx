@@ -57,7 +57,6 @@ export default function HowItWorksSection() {
             key={step}
             variant="outlined"
             sx={{
-              borderRadius: 2,
               transition: 'border-color 0.2s',
               '&:hover': { borderColor: 'primary.main' },
             }}

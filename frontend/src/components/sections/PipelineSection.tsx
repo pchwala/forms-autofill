@@ -92,7 +92,7 @@ export default function PipelineSection({
       </Typography>
       <Paper
         variant="outlined"
-        sx={{ p: 3, mt: 1.5, mb: 4, display: 'flex', flexDirection: 'column', gap: 3, bgcolor: 'background.paper', borderRadius: 2 }}
+        sx={{ p: 3, mt: 1.5, mb: 4, display: 'flex', flexDirection: 'column', gap: 3 }}
       >
         {/* History resubmit panel */}
         {historyRecord && isIdle && (
