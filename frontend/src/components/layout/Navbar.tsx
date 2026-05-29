@@ -17,21 +17,22 @@ export default function Navbar({ user, onSignOut, onHistory }: Props) {
     <AppBar
       position="sticky"
       elevation={0}
-      sx={{ bgcolor: 'background.paper', borderBottom: 1, borderColor: 'divider' }}
+      sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper' }}
     >
-      <Toolbar disableGutters sx={{ px: 4 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', maxWidth: 1200, mx: 'auto' }}>
-          <Typography
-            component="a"
-            href="https://pchwala.dev"
-            target="_blank"
-            rel="noopener noreferrer"
-            variant="h6"
-            sx={{ fontWeight: 700, textDecoration: 'none', color: 'text.primary', letterSpacing: '-0.5px' }}
-          >
-            pchwala
-          </Typography>
-          <Box sx={{ flexGrow: 1 }} />
+      <Toolbar
+        sx={{ maxWidth: 1200, width: '100%', mx: 'auto', px: { xs: 2, sm: 3 } }}
+      >
+        <Typography
+          component="a"
+          href="https://pchwala.dev"
+          target="_blank"
+          rel="noopener noreferrer"
+          variant="h6"
+          sx={{ fontWeight: 700, textDecoration: 'none', color: 'text.primary', flexGrow: 1, letterSpacing: '-0.5px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}
+        >
+          pchwala
+        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
           {!AUTH_DISABLED && user && (
             <UserMenu user={user} onSignOut={onSignOut} onHistory={onHistory} />
           )}
