@@ -139,24 +139,36 @@ export default function App() {
   return (
     <AuthGuard>
       <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-        {!AUTH_DISABLED && user && (
-          <AppBar position="sticky" elevation={0} sx={{ bgcolor: '#1a1f26', borderBottom: '1px solid #2d3136' }}>
-            <Toolbar variant="dense">
+        <AppBar position="sticky" elevation={0} sx={{ bgcolor: '#1a1f26', borderBottom: '1px solid #2d3136' }}>
+          <Toolbar disableGutters sx={{ px: 4 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', maxWidth: 1200, mx: 'auto' }}>
+              <Typography
+                component="a"
+                href="https://pchwala.dev"
+                target="_blank"
+                rel="noopener noreferrer"
+                variant="h6"
+                sx={{ fontWeight: 700, textDecoration: 'none', color: 'text.primary', letterSpacing: "-0.5px" }}
+              >
+                pchwala
+              </Typography>
               <Box sx={{ flexGrow: 1 }} />
-              <UserMenu user={user} onSignOut={() => void signOut()} onHistory={() => setHistoryOpen(true)} />
-            </Toolbar>
-          </AppBar>
-        )}
+              {!AUTH_DISABLED && user && (
+                <UserMenu user={user} onSignOut={() => void signOut()} onHistory={() => setHistoryOpen(true)} />
+              )}
+            </Box>
+          </Toolbar>
+        </AppBar>
         <HistoryDialog
           open={historyOpen}
           onClose={() => setHistoryOpen(false)}
           getToken={getToken}
           onSelect={handleHistorySelect}
         />
-      <Container maxWidth="md" sx={{ py: 6 }}>
+      <Container maxWidth="lg" sx={{ py: 6 }}>
 
         {/* ── Hero ── */}
-        <Box sx={{ textAlign: 'center', mb: 6 }}>
+        <Box sx={{ textAlign: 'center', mb: 6, maxWidth: 800, mx: 'auto' }}>
           <Typography
             variant="h3"
             sx={{
