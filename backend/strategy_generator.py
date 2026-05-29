@@ -35,10 +35,12 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 
 
-def _extract_suffix(config_path: pathlib.Path) -> str:
-    """Extract numeric suffix from form_config_N.json, falling back to '1'."""
-    m = re.search(r"_(\d+)\.json$", config_path.name)
-    return m.group(1) if m else "1"
+def _extract_base_name(config_path: pathlib.Path) -> str:
+    """Extract the base name from a {base_name}_form_config.json path."""
+    name = config_path.name
+    if not name.endswith("_form_config.json"):
+        raise ValueError(f"Unexpected config filename: {name!r}; expected *_form_config.json")
+    return name[: -len("_form_config.json")]
 
 
 def _build_question_summary(questions: list, routing: list) -> str:
@@ -89,7 +91,7 @@ class StrategyGenerator:
         data_dir: pathlib.Path,
     ) -> None:
         self._config = config
-        self._suffix = _extract_suffix(config_path)
+        self._base_name = _extract_base_name(config_path)
         self._data_dir = data_dir
         self._client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         self._model = "gpt-4.1"
@@ -99,15 +101,15 @@ class StrategyGenerator:
     # ------------------------------------------------------------------
 
     def _research_basis_path(self) -> pathlib.Path:
-        return self._data_dir / f"research_basis_{self._suffix}.json"
+        return self._data_dir / f"{self._base_name}_research_basis.json"
 
     def _research_analysis_path(self) -> pathlib.Path:
-        return self._data_dir / f"research_analysis_{self._suffix}.json"
+        return self._data_dir / f"{self._base_name}_research_analysis.json"
 
     def _strategy_path(self, output: str | None) -> pathlib.Path:
         if output:
             return pathlib.Path(output)
-        return self._data_dir / f"strategy_{self._suffix}.json"
+        return self._data_dir / f"{self._base_name}_strategy.json"
 
     # ------------------------------------------------------------------
     # Main entry point

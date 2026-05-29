@@ -32,15 +32,30 @@ FREE_TEXT_TYPES = {"text", "textarea", "date", "time"}
 _SECTION_TYPE = 8
 
 
-def _next_config_path(data_dir: pathlib.Path) -> pathlib.Path:
-    """Return data/form_config_N.json where N is the next available number."""
-    existing = sorted(
-        int(m.group(1))
-        for p in data_dir.glob("form_config_*.json")
-        if (m := re.match(r"form_config_(\d+)\.json", p.name))
-    )
-    n = (existing[-1] + 1) if existing else 1
-    return data_dir / f"form_config_{n}.json"
+def _slugify(title: str, max_len: int = 24) -> str:
+    """Convert a form title to a filesystem-safe slug (at most max_len chars)."""
+    slug = title.lower().replace(" ", "_")
+    slug = re.sub(r"[^a-z0-9_]", "", slug)
+    return slug[:max_len] or "form"
+
+
+def _next_config_path(data_dir: pathlib.Path, form_title: str) -> tuple[pathlib.Path, str]:
+    """Return (path, base_name) for the next available config file based on form title slug.
+
+    First variant: {slug}_form_config.json  (base_name = slug)
+    On collision:  {slug}_2_form_config.json, {slug}_3_form_config.json, ...
+    """
+    slug = _slugify(form_title)
+    # First variant — no numeric suffix
+    if not (data_dir / f"{slug}_form_config.json").exists():
+        return data_dir / f"{slug}_form_config.json", slug
+    # Find the next available numeric suffix starting at 2
+    n = 2
+    while True:
+        base_name = f"{slug}_{n}"
+        if not (data_dir / f"{base_name}_form_config.json").exists():
+            return data_dir / f"{base_name}_form_config.json", base_name
+        n += 1
 
 
 def _fetch_form_data(form_url: str) -> tuple[list, str]:
@@ -315,11 +330,12 @@ def extract(
     output_file: str,
     strategy_file: str,
     data_dir: pathlib.Path,
-) -> pathlib.Path:
+) -> tuple[pathlib.Path, str]:
     """Full extraction pipeline: fetch → parse → write config.
 
     Returns:
-        Path to the written form_config_N.json file.
+        (config_path, base_name) — path to the written {base_name}_form_config.json
+        and the base_name slug used for all downstream files.
     """
     print(f"Fetching form: {form_url}")
     fb_data, resolved_url = _fetch_form_data(form_url)
@@ -347,10 +363,10 @@ def extract(
         "questions": questions,
     }
 
-    out_path = _next_config_path(data_dir)
+    out_path, base_name = _next_config_path(data_dir, form_title)
     out_path.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"Config written to: {out_path}")
-    return out_path
+    return out_path, base_name
 
 
 def main() -> None:
@@ -384,7 +400,6 @@ def main() -> None:
     try:
         extract(
             form_url=args.form_url,
-            model=args.model,
             output_file=args.output_file,
             strategy_file=args.strategy_file,
             data_dir=data_dir,

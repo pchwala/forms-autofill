@@ -9,6 +9,7 @@ from typing import Callable
 
 from anyio import sleep
 
+import backend.firestore_service as firestore_service
 import backend.forms_extractor as forms_extractor
 import backend.strategy_generator as sg_module
 from backend.response_generator import ResponseGenerator
@@ -23,28 +24,42 @@ def step1_extract(
     form_url: str,
     data_dir: pathlib.Path,
     emit: Emit,
-) -> pathlib.Path:
+) -> tuple[pathlib.Path, str]:
     emit({"type": "step", "step": 1, "status": "start", "message": "Extracting form questions"})
     #time.sleep(200)
-    config_path = forms_extractor.extract(
+    config_path, base_name = forms_extractor.extract(
         form_url=form_url,
         output_file="data/responses.json",
         strategy_file="data/strategy.json",
         data_dir=data_dir,
     )
     emit({"type": "step", "step": 1, "status": "done", "message": f"Form extracted."})
-    return config_path
+    return config_path, base_name
 
 
 def step2_strategy(
     config_path: pathlib.Path,
     emit: Emit,
+    pipeline_id: str | None = None,
 ) -> pathlib.Path:
     emit({"type": "step", "step": 2, "status": "start", "message": "Generating strategy (3 GPT steps)"})
     strategy_path = sg_module.run(config_path=config_path, emit=emit)
     strategy_data = json.loads(strategy_path.read_text(encoding="utf-8"))
     emit({"type": "result", "key": "strategy", "data": strategy_data})
     emit({"type": "step", "step": 2, "status": "done", "message": f"Strategy saved."})
+    if pipeline_id is not None:
+        base_name = config_path.name[: -len("_form_config.json")]
+        data_dir = config_path.parent
+        for step_key, suffix in [
+            ("research_basis", "_research_basis.json"),
+            ("research_analysis", "_research_analysis.json"),
+            ("strategy", "_strategy.json"),
+        ]:
+            fp = data_dir / f"{base_name}{suffix}"
+            if fp.exists():
+                firestore_service.save_pipeline_step(
+                    pipeline_id, step_key, json.loads(fp.read_text(encoding="utf-8"))
+                )
     return strategy_path
 
 
@@ -53,6 +68,7 @@ def step3_generate(
     strategy_path: pathlib.Path,
     total_responses: int,
     emit: Emit,
+    pipeline_id: str | None = None,
 ) -> list[dict]:
     ai_count = min(total_responses, MAX_AI_RESPONSES)
     suffix = f" (reused in batches for {total_responses} total)" if total_responses > ai_count else ""
@@ -63,6 +79,7 @@ def step3_generate(
     responses = ResponseGenerator(config).generate(emit=emit)
     emit({"type": "result", "key": "responses", "data": responses})
     emit({"type": "step", "step": 3, "status": "done", "message": f"Generated {len(responses)} AI responses{suffix}"})
+    firestore_service.save_pipeline_step(pipeline_id, "responses", responses)
     return responses
 
 
@@ -128,14 +145,25 @@ def run_pipeline(
     form_url: str,
     total_responses: int,
     emit: Emit,
+    uid: str | None = None,
 ) -> tuple[pathlib.Path, list[dict]]:
     data_dir = pathlib.Path("data")
     data_dir.mkdir(exist_ok=True)
+    pipeline_id: str | None = None
+    try:
+        config_path, base_name = step1_extract(form_url, data_dir, emit)
+        config_data = json.loads(config_path.read_text(encoding="utf-8"))
+        form_title = config_data.get("form_title", "")
+        pipeline_id = firestore_service.create_pipeline(uid, form_url, form_title, total_responses, base_name)
+        firestore_service.save_pipeline_step(pipeline_id, "form_config", config_data)
 
-    config_path = step1_extract(form_url, data_dir, emit)
-    strategy_path = step2_strategy(config_path, emit)
-    responses = step3_generate(config_path, strategy_path, total_responses, emit)
-    shuffled = step4_shuffle(responses, emit)
-    step5_submit(config_path, shuffled, total_responses, emit)
+        strategy_path = step2_strategy(config_path, emit, pipeline_id=pipeline_id)
+        responses = step3_generate(config_path, strategy_path, total_responses, emit, pipeline_id=pipeline_id)
+        shuffled = step4_shuffle(responses, emit)
+        step5_submit(config_path, shuffled, total_responses, emit)
+        firestore_service.complete_pipeline(pipeline_id)
+    except Exception as exc:
+        firestore_service.fail_pipeline(pipeline_id, str(exc))
+        raise
 
     return config_path, shuffled
