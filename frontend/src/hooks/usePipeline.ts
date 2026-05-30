@@ -36,7 +36,6 @@ export function usePipeline(getToken: () => Promise<string>) {
   const [results, setResults] = useState<Record<string, unknown>>({});
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [currentStep, setCurrentStep] = useState(0); // steps completed so far
   const [submitProgress, setSubmitProgress] = useState<{
     current: number;
     total: number;
@@ -208,7 +207,6 @@ export function usePipeline(getToken: () => Promise<string>) {
       setLog([]);
       setResults({});
       setError(null);
-      setCurrentStep(0);
 
       const res = await fetch(`${API_URL}/session`, {
         method: 'POST',
@@ -233,7 +231,6 @@ export function usePipeline(getToken: () => Promise<string>) {
 
       await openStream(job_id);
 
-      setCurrentStep(step);
       if (step < 5) {
         setStatus('paused');
       }
@@ -255,7 +252,6 @@ export function usePipeline(getToken: () => Promise<string>) {
     await openStream(job_id);
 
     // After stream resolves the step is done
-    setCurrentStep(step);
     if (step < 5) {
       setStatus('paused');
     }
@@ -269,7 +265,6 @@ export function usePipeline(getToken: () => Promise<string>) {
     setResults({});
     setError(null);
     setSessionId(null);
-    setCurrentStep(0);
     setSubmitProgress(null);
     setResultId(null);
   }, [stopStream]);
@@ -342,7 +337,6 @@ export function usePipeline(getToken: () => Promise<string>) {
     results,
     error,
     sessionId,
-    currentStep,
     submitProgress,
     resultId,
     startFullPipeline,

@@ -4,6 +4,8 @@ import pathlib
 import sys
 from typing import Callable
 
+from backend.shuffle import _next_numbered_path
+
 from openai import OpenAI
 
 import backend.stub as stub
@@ -321,16 +323,6 @@ class ResponseGenerator:
         )
         print(f"Written {len(all_responses)} responses to {dest}")
         return all_responses
-
-
-def _next_numbered_path(base: pathlib.Path) -> pathlib.Path:
-    """Return the first non-existing path of the form <stem>_N<suffix>."""
-    n = 1
-    while True:
-        candidate = base.parent / f"{base.stem}_{n}{base.suffix}"
-        if not candidate.exists():
-            return candidate
-        n += 1
 
 
 def main() -> None:

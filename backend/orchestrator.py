@@ -4,10 +4,7 @@ import json
 import math
 import pathlib
 import random
-import time
 from typing import Callable
-
-from anyio import sleep
 
 import backend.firestore_service as firestore_service
 import backend.forms_extractor as forms_extractor
@@ -26,7 +23,6 @@ def step1_extract(
     emit: Emit,
 ) -> tuple[pathlib.Path, str]:
     emit({"type": "step", "step": 1, "status": "start", "message": "Extracting form questions"})
-    #time.sleep(200)
     config_path, base_name = forms_extractor.extract(
         form_url=form_url,
         output_file="data/responses.json",

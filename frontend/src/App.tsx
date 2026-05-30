@@ -18,7 +18,6 @@ import type { PipelineMode } from './components/InputForm';
 
 export default function App() {
   const { getToken, user, signOut } = useAuth();
-  const [reviewOpen, setReviewOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyRecord, setHistoryRecord] = useState<{ pipelineId: string; formTitle: string; totalResponses: number } | null>(null);
   const [historyResubmitCount, setHistoryResubmitCount] = useState(100);

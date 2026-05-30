@@ -3,6 +3,8 @@ __pycache__/
 data/
 *.cache
 *.env
+.env.production
+.env.development
 
 viewform.htm
 description.md
