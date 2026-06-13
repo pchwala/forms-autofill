@@ -44,7 +44,6 @@ docker run -p 8000:8000 -e AUTH_DISABLED=true -e OPENAI_API_KEY=sk-... forms-aut
 | `AUTH_DISABLED` | `false` | Set `true` for local dev to skip Firebase |
 | `OPENAI_API_KEY` | — | Required for AI pipeline steps |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated |
-| `AI_SWITCH_STUB` | `false` | `true` replaces all AI calls with canned data + 10s delay |
 | `FIREBASE_CREDENTIALS_JSON` | — | File path or raw JSON; only needed when `AUTH_DISABLED=false` |
 | `KOFI_VERIFICATION_TOKEN` | — | Secures the Ko-fi payment webhook |
 
@@ -82,8 +81,6 @@ In-memory state (`_jobs`, `_sessions`) is not persisted across restarts.
 **Payment gating** (`firestore_service.py`): each user gets one free pipeline run (`free_used` flag). Paid users (`paid=true`) are unlocked via a Ko-fi webhook (`POST /webhook/kofi`).
 
 **Firestore collections**: `users/{uid}`, `pipelines/{pipeline_id}` (stores per-step JSON output as `step_form_config`, `step_strategy`, `step_responses`, etc.).
-
-**Stub mode** (`stub.py`): when `AI_SWITCH_STUB=true`, every AI call returns minimal canned data after a 10-second sleep — useful for testing the full flow without spending API tokens.
 
 ### Frontend (`frontend/src/`)
 

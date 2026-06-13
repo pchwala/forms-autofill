@@ -104,7 +104,6 @@ export default function App() {
             open={historyOpen}
             onClose={() => setHistoryOpen(false)}
             getToken={getToken}
-            onSelect={() => setHistoryOpen(false)}
           />
           <PaywallDialog
             open={paywallOpen}

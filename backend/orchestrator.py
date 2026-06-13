@@ -136,31 +136,3 @@ def step5_submit(
             random.shuffle(current_responses)
 
     emit({"type": "step", "step": 5, "status": "done", "message": f"All {submitted} responses submitted"})
-
-
-def run_pipeline(
-    form_url: str,
-    total_responses: int,
-    emit: Emit,
-    uid: str | None = None,
-) -> tuple[pathlib.Path, list[dict]]:
-    data_dir = pathlib.Path("data")
-    data_dir.mkdir(exist_ok=True)
-    pipeline_id: str | None = None
-    try:
-        config_path, base_name = step1_extract(form_url, data_dir, emit)
-        config_data = json.loads(config_path.read_text(encoding="utf-8"))
-        form_title = config_data.get("form_title", "")
-        pipeline_id = firestore_service.create_pipeline(uid, form_url, form_title, total_responses, base_name)
-        firestore_service.save_pipeline_step(pipeline_id, "form_config", config_data)
-
-        strategy_path = step2_strategy(config_path, emit, pipeline_id=pipeline_id)
-        responses = step3_generate(config_path, strategy_path, total_responses, emit, pipeline_id=pipeline_id)
-        shuffled = step4_shuffle(responses, emit)
-        step5_submit(config_path, shuffled, total_responses, emit)
-        firestore_service.complete_pipeline(pipeline_id)
-    except Exception as exc:
-        firestore_service.fail_pipeline(pipeline_id, str(exc))
-        raise
-
-    return config_path, shuffled

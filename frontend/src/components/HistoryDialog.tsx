@@ -10,7 +10,6 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
-import ListItemButton from '@mui/material/ListItemButton';
 import ListItemText from '@mui/material/ListItemText';
 import Typography from '@mui/material/Typography';
 
@@ -30,7 +29,6 @@ interface Props {
   open: boolean;
   onClose: () => void;
   getToken: () => Promise<string>;
-  onSelect: (pipelineId: string, totalResponses: number, formTitle: string) => void;
 }
 
 function formatDate(iso: string): string {
@@ -44,7 +42,7 @@ const STATUS_CHIP: Record<string, { label: string; color: 'success' | 'error' | 
   in_progress: { label: 'In progress', color: 'warning' },
 };
 
-export default function HistoryDialog({ open, onClose, getToken, onSelect }: Props) {
+export default function HistoryDialog({ open, onClose, getToken }: Props) {
   const [records, setRecords] = useState<PipelineRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,10 +72,6 @@ export default function HistoryDialog({ open, onClose, getToken, onSelect }: Pro
       });
   }, [open, getToken]);
 
-  function handleSelect(record: PipelineRecord) {
-    onSelect(record.pipeline_id, record.total_responses, record.form_title);
-  }
-
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>History</DialogTitle>
@@ -103,22 +97,19 @@ export default function HistoryDialog({ open, onClose, getToken, onSelect }: Pro
           <List disablePadding>
             {records.map((record, idx) => {
               const chip = STATUS_CHIP[record.status] ?? { label: record.status, color: 'warning' as const };
-              const disabled = record.status !== 'completed';
               return (
                 <ListItem
                   key={record.pipeline_id}
-                  disablePadding
                   divider={idx < records.length - 1}
                   secondaryAction={
                     <Chip label={chip.label} color={chip.color} size="small" variant="outlined" />
                   }
+                  sx={{ pr: 12 }}
                 >
-                  <ListItemButton onClick={() => handleSelect(record)} disabled={disabled} sx={{ pr: 10 }}>
-                    <ListItemText
-                      primary={record.form_title || 'Untitled'}
-                      secondary={`${formatDate(record.created_at)} · ${record.total_responses} responses`}
-                    />
-                  </ListItemButton>
+                  <ListItemText
+                    primary={record.form_title || 'Untitled'}
+                    secondary={`${formatDate(record.created_at)} · ${record.total_responses} responses`}
+                  />
                 </ListItem>
               );
             })}

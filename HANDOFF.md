@@ -137,10 +137,8 @@ single-shot pipeline to an **anonymous, preview-then-pay** product. Read this fi
 ## Gotchas / things to know
 - **Dev mode** (`AUTH_DISABLED=true` + `VITE_AUTH_DISABLED=true`): `/user/status` and
   `/credits/grant` return `credits: 999999`, submit never charges, no Firestore. The
-  preview math + orchestration are exercisable, but **form extraction and Google submission
-  still hit the network** — stub mode only stubs the AI calls.
-- **Stub mode** (`AI_SWITCH_STUB=true`) stubs only OpenAI; it still constructs the OpenAI
-  client, so a (dummy) `OPENAI_API_KEY` must be set even in stub mode.
+  preview math + orchestration are exercisable, but **form extraction, AI calls, and Google
+  submission all hit the network** (a valid `OPENAI_API_KEY` is required).
 - The **desire prompt** affects the preview because it's injected at strategy time (step 2);
   generation then samples from the already-skewed personas, so submissions stay faithful.
 - Secrets: `backend/.env` (live `OPENAI_API_KEY`) and `backend/firebase_credentials.json`
