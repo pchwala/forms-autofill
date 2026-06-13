@@ -1,15 +1,10 @@
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
-import ToggleButton from '@mui/material/ToggleButton';
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
-import Typography from '@mui/material/Typography';
 import { useState } from 'react';
 
-export type PipelineMode = 'full' | 'step';
-
 interface Props {
-  onStart: (url: string, count: number, mode: PipelineMode) => void;
+  onStart: (url: string, count: number) => void;
   disabled?: boolean;
   freeUsed?: boolean;
   paid?: boolean;
@@ -18,7 +13,6 @@ interface Props {
 export default function InputForm({ onStart, disabled, freeUsed, paid }: Props) {
   const [url, setUrl] = useState('');
   const [count, setCount] = useState(100);
-  const [mode, setMode] = useState<PipelineMode>('full');
 
   const valid = url.trim().length > 0 && count > 0;
 
@@ -67,27 +61,11 @@ export default function InputForm({ onStart, disabled, freeUsed, paid }: Props) 
         />
       </Box>
 
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-        <Typography variant="body2" color="text.secondary">
-          Mode:
-        </Typography>
-        <ToggleButtonGroup
-          value={mode}
-          exclusive
-          size="small"
-          onChange={(_, v: PipelineMode | null) => { if (v) setMode(v); }}
-          disabled={disabled}
-        >
-          <ToggleButton value="full">Full pipeline</ToggleButton>
-          <ToggleButton value="step">Step by step</ToggleButton>
-        </ToggleButtonGroup>
-      </Box>
-
       <Box>
         <Button
           variant="contained"
           disabled={disabled || !valid}
-          onClick={() => onStart(url.trim(), count, mode)}
+          onClick={() => onStart(url.trim(), count)}
         >
           Start
         </Button>

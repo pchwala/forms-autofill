@@ -12,7 +12,6 @@ import Paper from '@mui/material/Paper';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import InputForm from '../InputForm';
-import type { PipelineMode } from '../InputForm';
 import PipelineProgress from '../PipelineProgress';
 import type { StepInfo } from '../../hooks/usePipeline';
 
@@ -43,8 +42,7 @@ interface Props {
   resubmitCount: number;
   freeUsed?: boolean;
   paid?: boolean;
-  onStart: (url: string, count: number, mode: PipelineMode) => void;
-  onAdvance: () => void;
+  onStart: (url: string, count: number) => void;
   onResubmit: () => void;
   onReset: () => void;
   onHistoryResubmit: () => void;
@@ -68,7 +66,6 @@ export default function PipelineSection({
   freeUsed,
   paid,
   onStart,
-  onAdvance,
   onResubmit,
   onReset,
   onHistoryResubmit,
@@ -133,9 +130,6 @@ export default function PipelineSection({
 
         {/* Button row — always visible */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Button variant="contained" onClick={onAdvance} disabled={!isPaused}>
-            Next Step
-          </Button>
           <Button
             variant="outlined"
             onClick={() => setReviewOpen(true)}

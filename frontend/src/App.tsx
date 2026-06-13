@@ -14,7 +14,6 @@ import AuthGuard from './components/AuthGuard';
 import { usePipeline } from './hooks/usePipeline';
 import { useAuth } from './hooks/useAuth';
 import { useUserStatus } from './hooks/useUserStatus';
-import type { PipelineMode } from './components/InputForm';
 
 export default function App() {
   const { getToken, user, signOut } = useAuth();
@@ -33,8 +32,6 @@ export default function App() {
     resultId,
     sessionId,
     startFullPipeline,
-    createSession,
-    advanceSession,
     resubmit,
     resubmitFromHistory,
     reset,
@@ -46,14 +43,10 @@ export default function App() {
     if (isBlocked) void refreshStatus();
   }, [isBlocked, refreshStatus]);
 
-  async function handleStart(url: string, count: number, mode: PipelineMode) {
+  async function handleStart(url: string, count: number) {
     setResubmitCount(count);
     try {
-      if (mode === 'full') {
-        await startFullPipeline(url, count);
-      } else {
-        await createSession(url, count);
-      }
+      await startFullPipeline(url, count);
     } catch {
       // error state already set inside the hook
     }
@@ -62,14 +55,6 @@ export default function App() {
   async function handleResubmit() {
     try {
       await resubmit(resubmitCount);
-    } catch {
-      // error state already set inside the hook
-    }
-  }
-
-  async function handleAdvance() {
-    try {
-      await advanceSession();
     } catch {
       // error state already set inside the hook
     }
@@ -125,7 +110,6 @@ export default function App() {
               freeUsed={freeUsed}
               paid={paid}
               onStart={handleStart}
-              onAdvance={() => void handleAdvance()}
               onResubmit={() => void handleResubmit()}
               onReset={reset}
               onHistoryResubmit={() => void handleHistoryResubmit()}
