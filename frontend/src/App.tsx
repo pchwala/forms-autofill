@@ -18,8 +18,8 @@ import { useAuth } from './hooks/useAuth';
 import { useCredits } from './hooks/useCredits';
 
 export default function App() {
-  const { getToken, user, isAnonymous, signInWithGoogle, signOut } = useAuth();
-  const { credits, refresh: refreshCredits } = useCredits(getToken);
+  const { getToken, user, loading: authLoading, isAnonymous, signInWithGoogle, signOut } = useAuth();
+  const { credits, refresh: refreshCredits } = useCredits(getToken, user, authLoading);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [paywallOpen, setPaywallOpen] = useState(false);
   const [pendingCodes, setPendingCodes] = useState<string[] | null>(null);

@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  GoogleAuthProvider,
   linkWithPopup,
   onAuthStateChanged,
   signInAnonymously,
+  signInWithCredential,
   signInWithPopup,
   signOut as firebaseSignOut,
+  type AuthError,
   type User,
 } from 'firebase/auth';
 import { auth, googleProvider, AUTH_DISABLED } from '../firebase';
@@ -54,8 +57,17 @@ export function useAuth(): AuthState {
         await linkWithPopup(current, googleProvider);
         return;
       } catch (err: unknown) {
-        // Account already exists for this Google identity — fall back to plain sign-in.
         const code = (err as { code?: string }).code;
+        // The Google identity already has an account. The link popup already
+        // completed, so reuse its credential to sign in directly — opening a
+        // second popup here is what caused the double prompt.
+        if (code === 'auth/credential-already-in-use') {
+          const cred = GoogleAuthProvider.credentialFromError(err as AuthError);
+          if (cred) {
+            await signInWithCredential(auth, cred);
+            return;
+          }
+        }
         if (code !== 'auth/credential-already-in-use' && code !== 'auth/email-already-in-use') {
           throw err;
         }

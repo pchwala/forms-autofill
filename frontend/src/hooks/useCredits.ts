@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import type { User } from 'firebase/auth';
 import { AUTH_DISABLED } from '../firebase';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
@@ -9,7 +10,11 @@ export interface CreditsState {
   refresh: () => Promise<void>;
 }
 
-export function useCredits(getToken: () => Promise<string>): CreditsState {
+export function useCredits(
+  getToken: () => Promise<string>,
+  user: User | null,
+  authLoading: boolean,
+): CreditsState {
   const [credits, setCredits] = useState(0);
   const [loading, setLoading] = useState(!AUTH_DISABLED);
 
@@ -30,8 +35,17 @@ export function useCredits(getToken: () => Promise<string>): CreditsState {
   }, [getToken]);
 
   useEffect(() => {
+    // Wait until Firebase auth resolves before calling an authed endpoint; firing
+    // before sign-in completes sends no token and provokes a guaranteed 401.
+    if (!AUTH_DISABLED && authLoading) return;
+    // Auth resolved but there's no session (anonymous sign-in disabled or failed) —
+    // there's no token to send, so skip the call instead of forcing a 401.
+    if (!AUTH_DISABLED && !user) {
+      setLoading(false);
+      return;
+    }
     void fetchCredits();
-  }, [fetchCredits]);
+  }, [fetchCredits, user, authLoading]);
 
   return { credits, loading, refresh: fetchCredits };
 }
