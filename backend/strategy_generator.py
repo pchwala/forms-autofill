@@ -89,12 +89,30 @@ class StrategyGenerator:
         config: dict,
         config_path: pathlib.Path,
         data_dir: pathlib.Path,
+        desire_prompt: str | None = None,
     ) -> None:
         self._config = config
         self._base_name = _extract_base_name(config_path)
         self._data_dir = data_dir
+        self._desire_prompt = (desire_prompt or "").strip() or None
         self._client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         self._model = "gpt-4.1"
+
+    def _directive_block(self) -> str:
+        """High-priority user directive that outranks the research-based distributions.
+
+        Returned as a prompt prefix (empty string when no desire prompt was given).
+        """
+        if not self._desire_prompt:
+            return ""
+        return (
+            "USER DIRECTIVE — HIGHEST PRIORITY. The person running this survey has "
+            "explicitly requested the following desired outcome. Whenever it conflicts "
+            "with the research-based statistics, the directive WINS: skew the "
+            "distributions, persona mix, and weighted answers so the aggregate result "
+            "matches this request as closely as the question options allow.\n"
+            f'DIRECTIVE: "{self._desire_prompt}"\n\n'
+        )
 
     # ------------------------------------------------------------------
     # Path helpers
@@ -346,7 +364,7 @@ Return ONLY a JSON object with this schema (no markdown, no explanation):
                     "role": "system",
                     "content": "You are a survey methodology expert. Return only valid JSON.",
                 },
-                {"role": "user", "content": prompt},
+                {"role": "user", "content": self._directive_block() + prompt},
             ],
         )
         return json.loads(completion.choices[0].message.content)
@@ -426,7 +444,7 @@ Return ONLY a JSON object with this schema (no markdown, no explanation):
                     "role": "system",
                     "content": "You are a survey methodology expert. Return only valid JSON.",
                 },
-                {"role": "user", "content": prompt},
+                {"role": "user", "content": self._directive_block() + prompt},
             ],
         )
         result = json.loads(completion.choices[0].message.content)
@@ -445,20 +463,23 @@ def run(
     start_step: int = 1,
     output: str | None = None,
     emit: Callable[[dict], None] | None = None,
+    desire_prompt: str | None = None,
 ) -> pathlib.Path:
     """Run the strategy generation pipeline and return the path to the strategy JSON.
 
     Args:
-        config_path: Path to form_config_N.json.
-        start_step:  1 = full run, 2 = skip web search, 3 = skip web search + analysis.
-        output:      Custom output path (default: data/strategy_N.json).
-        emit:        Optional SSE emit callback for streaming progress events.
+        config_path:   Path to form_config_N.json.
+        start_step:    1 = full run, 2 = skip web search, 3 = skip web search + analysis.
+        output:        Custom output path (default: data/strategy_N.json).
+        emit:          Optional SSE emit callback for streaming progress events.
+        desire_prompt: Optional high-priority user directive that skews the generated
+                       distributions/personas toward a requested outcome.
     """
     config_path = pathlib.Path(config_path)
     config = json.loads(config_path.read_text(encoding="utf-8"))
     data_dir = pathlib.Path("data")
     data_dir.mkdir(exist_ok=True)
-    return StrategyGenerator(config, config_path, data_dir).run(
+    return StrategyGenerator(config, config_path, data_dir, desire_prompt=desire_prompt).run(
         start_step=start_step,
         output=output,
         emit=emit,

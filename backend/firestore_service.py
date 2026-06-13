@@ -16,48 +16,69 @@ def _client():
 
 
 def get_or_create_user(uid: str, email: str) -> None:
-    """Create users/{uid} doc if it doesn't exist; never overwrites gating fields."""
+    """Create users/{uid} doc if it doesn't exist; never overwrites the credits balance."""
     ref = _client().collection("users").document(uid)
     doc = ref.get()
     if doc.exists:
-        ref.update({"email": email})
+        if email:
+            ref.update({"email": email})
     else:
         ref.set(
             {
                 "email": email,
-                "free_used": False,
-                "paid": False,
-                "paid_at": None,
+                "credits": 0,
             }
         )
 
 
-def can_run_pipeline(uid: str) -> bool:
-    """Return True if the user may start a pipeline run."""
+def get_credits(uid: str) -> int:
+    """Return the user's current credit balance (0 if no record)."""
     doc = _client().collection("users").document(uid).get()
     if not doc.exists:
-        return True  # no record yet — treat as a fresh user
-    data = doc.to_dict()
-    return data.get("paid", False) or not data.get("free_used", False)
+        return 0
+    return int(doc.to_dict().get("credits", 0))
 
 
-def consume_free_use(uid: str) -> None:
-    """Set free_used=True; no-op if the user is already paid."""
+def add_credits(uid: str, n: int) -> int:
+    """Add n credits to the user (creating the field if missing); return the new balance.
+
+    Used by the placeholder paywall; Stripe will call this from its webhook later.
+    """
     ref = _client().collection("users").document(uid)
-    doc = ref.get()
-    if doc.exists and doc.to_dict().get("paid", False):
-        return
-    ref.update({"free_used": True})
+
+    @firestore.transactional
+    def _txn(transaction) -> int:
+        snapshot = ref.get(transaction=transaction)
+        current = int(snapshot.to_dict().get("credits", 0)) if snapshot.exists else 0
+        new_balance = current + n
+        transaction.set(ref, {"credits": new_balance}, merge=True)
+        return new_balance
+
+    return _txn(_client().transaction())
 
 
+def consume_credit(uid: str) -> bool:
+    """Atomically decrement one credit if the balance is positive.
 
-def get_user_status(uid: str) -> dict[str, bool]:
-    """Return the user's free_used and paid flags."""
-    doc = _client().collection("users").document(uid).get()
-    if not doc.exists:
-        return {"free_used": False, "paid": False}
-    data = doc.to_dict()
-    return {"free_used": data.get("free_used", False), "paid": data.get("paid", False)}
+    Returns True if a credit was consumed, False if the balance was already 0.
+    """
+    ref = _client().collection("users").document(uid)
+
+    @firestore.transactional
+    def _txn(transaction) -> bool:
+        snapshot = ref.get(transaction=transaction)
+        current = int(snapshot.to_dict().get("credits", 0)) if snapshot.exists else 0
+        if current <= 0:
+            return False
+        transaction.update(ref, {"credits": current - 1})
+        return True
+
+    return _txn(_client().transaction())
+
+
+def get_user_status(uid: str) -> dict[str, int]:
+    """Return the user's credit balance."""
+    return {"credits": get_credits(uid)}
 
 
 # ---------------------------------------------------------------------------
@@ -71,6 +92,7 @@ def create_pipeline(
     form_title: str,
     total_responses: int,
     base_name: str,
+    desire_prompt: str | None = None,
 ) -> str | None:
     """Create a pipeline doc; returns pipeline_id or None when uid is None."""
     if uid is None:
@@ -83,6 +105,9 @@ def create_pipeline(
             "form_title": form_title,
             "base_name": base_name,
             "total_responses": total_responses,
+            "desire_prompt": desire_prompt,
+            "preview": None,
+            "selected_persona_codes": None,
             "status": "in_progress",
             "created_at": datetime.now(tz=timezone.utc),
             "completed_at": None,
@@ -90,6 +115,13 @@ def create_pipeline(
         }
     )
     return pipeline_id
+
+
+def update_pipeline(pipeline_id: str | None, fields: dict) -> None:
+    """Patch arbitrary top-level fields on a pipeline document."""
+    if pipeline_id is None:
+        return
+    _client().collection("pipelines").document(pipeline_id).update(fields)
 
 
 def save_pipeline_step(pipeline_id: str | None, step_key: str, data: object) -> None:

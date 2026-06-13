@@ -37,9 +37,10 @@ def step2_strategy(
     config_path: pathlib.Path,
     emit: Emit,
     pipeline_id: str | None = None,
+    desire_prompt: str | None = None,
 ) -> pathlib.Path:
     emit({"type": "step", "step": 2, "status": "start", "message": "Generating strategy (3 GPT steps)"})
-    strategy_path = sg_module.run(config_path=config_path, emit=emit)
+    strategy_path = sg_module.run(config_path=config_path, emit=emit, desire_prompt=desire_prompt)
     strategy_data = json.loads(strategy_path.read_text(encoding="utf-8"))
     emit({"type": "result", "key": "strategy", "data": strategy_data})
     emit({"type": "step", "step": 2, "status": "done", "message": f"Strategy saved."})

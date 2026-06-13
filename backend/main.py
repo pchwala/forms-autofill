@@ -16,9 +16,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 
 from .firestore_service import (
-    can_run_pipeline,
+    add_credits,
     complete_pipeline,
-    consume_free_use,
+    consume_credit,
     create_pipeline,
     fail_pipeline,
     get_or_create_user,
@@ -26,6 +26,7 @@ from .firestore_service import (
     get_user_pipelines,
     get_user_status,
     save_pipeline_step,
+    update_pipeline,
 )
 from .orchestrator import (
     run_pipeline,
@@ -35,6 +36,10 @@ from .orchestrator import (
     step4_shuffle,
     step5_submit,
 )
+from .preview import compute_preview, filter_and_renormalize_personas
+
+# Credits granted per placeholder "payment". Stripe will replace /credits/grant later.
+CREDITS_PER_PURCHASE = int(os.getenv("CREDITS_PER_PURCHASE", "1"))
 
 app = FastAPI(title="Forms Autofill API")
 
@@ -74,6 +79,10 @@ if not AUTH_DISABLED:
 
 _jobs: dict[str, dict] = {}
 _sessions: dict[str, dict] = {}
+# Preview/submit pipelines held in-process between the free preview and the paid
+# submit (the placeholder paywall is a dialog, so the process stays up in between).
+# Firestore persistence (when authed) is for history; this is the submit source of truth.
+_pipelines: dict[str, dict] = {}
 
 
 def _verify(authorization: str | None) -> dict[str, str]:
@@ -160,13 +169,12 @@ class ResubmitHistoryRequest(BaseModel):
 
 @app.post("/run")
 async def run(req: RunRequest, authorization: str | None = Header(default=None)):
+    # Legacy all-in-one endpoint, superseded by /preview + /pipelines/{id}/submit.
+    # Kept for reference; not called by the frontend.
     user = _verify(authorization)
     uid, email = user["uid"], user["email"]
     if not AUTH_DISABLED:
         get_or_create_user(uid, email)
-        if not can_run_pipeline(uid):
-            raise HTTPException(status_code=402, detail="Free run already used; payment required")
-        consume_free_use(uid)
     loop = asyncio.get_running_loop()
     job_id, _, emit = _make_job(loop)
 
@@ -189,13 +197,11 @@ async def run(req: RunRequest, authorization: str | None = Header(default=None))
 
 @app.post("/session")
 async def create_session(req: SessionRequest, authorization: str | None = Header(default=None)):
+    # Legacy step-by-step session endpoint; retained but not used by the frontend.
     user = _verify(authorization)
     uid, email = user["uid"], user["email"]
     if not AUTH_DISABLED:
         get_or_create_user(uid, email)
-        if not can_run_pipeline(uid):
-            raise HTTPException(status_code=402, detail="Free run already used; payment required")
-        consume_free_use(uid)
     session_id = str(uuid.uuid4())
     _sessions[session_id] = {
         "form_url": req.form_url,
@@ -475,5 +481,202 @@ async def resubmit_history(
 async def user_status(authorization: str | None = Header(default=None)):
     user = _verify(authorization)
     if AUTH_DISABLED:
-        return {"free_used": False, "paid": False}
+        return {"credits": 999999}  # effectively unlimited in dev
     return get_user_status(user["uid"])
+
+
+# ---------------------------------------------------------------------------
+# Preview → paywall → submit flow
+# ---------------------------------------------------------------------------
+
+
+class PreviewRequest(BaseModel):
+    form_url: str
+    total_responses: int = 100
+    desire_prompt: str | None = None
+
+    @field_validator("total_responses")
+    @classmethod
+    def _validate_total(cls, v: int) -> int:
+        if not (1 <= v <= 1000):
+            raise ValueError("total_responses must be between 1 and 1000")
+        return v
+
+
+class SubmitRequest(BaseModel):
+    selected_persona_codes: list[str]
+    total_responses: int
+
+    @field_validator("total_responses")
+    @classmethod
+    def _validate_total(cls, v: int) -> int:
+        if not (1 <= v <= 1000):
+            raise ValueError("total_responses must be between 1 and 1000")
+        return v
+
+    @field_validator("selected_persona_codes")
+    @classmethod
+    def _validate_codes(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("At least one persona must be selected")
+        return v
+
+
+@app.post("/preview")
+async def preview(req: PreviewRequest, authorization: str | None = Header(default=None)):
+    """Free phase: extract the form + generate a strategy, then return the predicted
+    persona mix and answer distributions. No credit is consumed."""
+    user = _verify(authorization)
+    uid, email = user["uid"], user["email"]
+    if not AUTH_DISABLED:
+        get_or_create_user(uid, email)
+
+    pipeline_id = str(uuid.uuid4())
+    _pipelines[pipeline_id] = {
+        "uid": uid,
+        "status": "in_progress",
+        "form_url": req.form_url,
+        "total_responses": req.total_responses,
+        "desire_prompt": req.desire_prompt,
+        "config_path": None,
+        "strategy_path": None,
+        "base_name": None,
+        "preview": None,
+        "fs_id": None,  # Firestore pipeline id (when authed)
+    }
+
+    loop = asyncio.get_running_loop()
+    job_id, _, emit = _make_job(loop)
+
+    def worker() -> None:
+        try:
+            data_dir = pathlib.Path("data")
+            data_dir.mkdir(exist_ok=True)
+
+            config_path, base_name = step1_extract(req.form_url, data_dir, emit)
+            config_data = json.loads(config_path.read_text(encoding="utf-8"))
+            form_title = config_data.get("form_title", "")
+
+            fs_id = None
+            if not AUTH_DISABLED:
+                fs_id = create_pipeline(
+                    uid, req.form_url, form_title, req.total_responses, base_name,
+                    desire_prompt=req.desire_prompt,
+                )
+                save_pipeline_step(fs_id, "form_config", config_data)
+
+            strategy_path = step2_strategy(
+                config_path, emit, pipeline_id=fs_id, desire_prompt=req.desire_prompt
+            )
+            strategy_data = json.loads(strategy_path.read_text(encoding="utf-8"))
+            preview_data = compute_preview(strategy_data, config_data)
+
+            _pipelines[pipeline_id].update(
+                {
+                    "status": "preview_ready",
+                    "config_path": config_path,
+                    "strategy_path": strategy_path,
+                    "base_name": base_name,
+                    "preview": preview_data,
+                    "fs_id": fs_id,
+                }
+            )
+            if not AUTH_DISABLED:
+                update_pipeline(fs_id, {"status": "preview_ready", "preview": preview_data})
+
+            emit({"type": "result", "key": "preview", "data": preview_data})
+            emit({"type": "done", "pipeline_id": pipeline_id})
+        except Exception as exc:
+            _pipelines[pipeline_id]["status"] = "failed"
+            _jobs[job_id]["status"] = "error"
+            _jobs[job_id]["error"] = str(exc)
+            emit({"type": "error", "message": str(exc)})
+
+    threading.Thread(target=worker, daemon=True).start()
+    return {"job_id": job_id, "pipeline_id": pipeline_id}
+
+
+@app.post("/pipelines/{pipeline_id}/submit")
+async def submit_pipeline(
+    pipeline_id: str,
+    req: SubmitRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Paid phase: consume a credit, then generate + shuffle + submit responses for the
+    selected personas. Returns 402 when the user has no credits."""
+    user = _verify(authorization)
+    uid = user["uid"]
+
+    pipe = _pipelines.get(pipeline_id)
+    if pipe is None or pipe.get("status") not in ("preview_ready", "completed"):
+        raise HTTPException(status_code=404, detail="Pipeline not found or not ready")
+    if not AUTH_DISABLED and pipe.get("uid") != uid:
+        raise HTTPException(status_code=403, detail="Not your pipeline")
+
+    if not AUTH_DISABLED:
+        if not consume_credit(uid):
+            raise HTTPException(status_code=402, detail="No credits; payment required")
+
+    config_path: pathlib.Path = pipe["config_path"]
+    strategy_path: pathlib.Path = pipe["strategy_path"]
+    fs_id = pipe.get("fs_id")
+    strategy_data = json.loads(strategy_path.read_text(encoding="utf-8"))
+
+    try:
+        filtered = filter_and_renormalize_personas(strategy_data, req.selected_persona_codes)
+    except ValueError as exc:
+        if not AUTH_DISABLED:
+            add_credits(uid, 1)  # refund — submission never ran
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Write a filtered strategy file for the response generator to consume.
+    filtered_path = strategy_path.with_name(strategy_path.stem + "_filtered.json")
+    filtered_path.write_text(json.dumps(filtered, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    if not AUTH_DISABLED:
+        update_pipeline(
+            fs_id,
+            {"status": "submitting", "selected_persona_codes": req.selected_persona_codes},
+        )
+
+    loop = asyncio.get_running_loop()
+    job_id, _, emit = _make_job(loop)
+
+    def worker() -> None:
+        try:
+            responses = step3_generate(
+                config_path, filtered_path, req.total_responses, emit, pipeline_id=fs_id
+            )
+            shuffled = step4_shuffle(responses, emit)
+            step5_submit(config_path, shuffled, req.total_responses, emit)
+            pipe["status"] = "completed"
+            _jobs[job_id]["status"] = "done"
+            _jobs[job_id]["result"] = shuffled
+            if not AUTH_DISABLED:
+                complete_pipeline(fs_id)
+            emit({"type": "done", "total": req.total_responses, "pipeline_id": pipeline_id})
+        except Exception as exc:
+            pipe["status"] = "preview_ready"  # allow retry
+            if not AUTH_DISABLED:
+                add_credits(uid, 1)  # refund the credit on failure
+                fail_pipeline(fs_id, str(exc))
+            _jobs[job_id]["status"] = "error"
+            _jobs[job_id]["error"] = str(exc)
+            emit({"type": "error", "message": str(exc)})
+
+    threading.Thread(target=worker, daemon=True).start()
+    return {"job_id": job_id}
+
+
+@app.post("/credits/grant")
+async def credits_grant(authorization: str | None = Header(default=None)):
+    """Placeholder paywall: grants credits without real payment.
+
+    Replace with Stripe Checkout session creation + webhook-driven add_credits later.
+    """
+    user = _verify(authorization)
+    if AUTH_DISABLED:
+        return {"credits": 999999}
+    get_or_create_user(user["uid"], user["email"])
+    new_balance = add_credits(user["uid"], CREDITS_PER_PURCHASE)
+    return {"credits": new_balance}
