@@ -30,7 +30,12 @@ export function useAuth(): AuthState {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       if (!u) {
         // No session yet — sign in anonymously so every visitor has a uid + token.
-        void signInAnonymously(auth!);
+        signInAnonymously(auth!).catch((err) => {
+          // e.g. auth/admin-restricted-operation when the Anonymous provider is
+          // disabled in the Firebase console. Don't hang on the spinner forever.
+          console.error('Anonymous sign-in failed:', err);
+          setLoading(false);
+        });
         return;
       }
       setUser(u);
