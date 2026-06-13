@@ -75,17 +75,7 @@ export default function AuthGuard({ children }: Props) {
             Sign in with Google
           </Button>
           <Typography variant="caption" color="text.secondary">
-            Free to try ·{' '}
-            <Box
-              component="a"
-              href="https://ko-fi.com/pchwala"
-              target="_blank"
-              rel="noopener noreferrer"
-              sx={{ color: '#FF5E5B', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
-            >
-              Ko-fi donation
-            </Box>
-            {' '}for unlimited access
+            Free to try
           </Typography>
         </Box>
       </Box>

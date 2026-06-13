@@ -4,14 +4,13 @@ import asyncio
 import json
 import os
 import pathlib
-import re
 import threading
 import uuid
 from typing import AsyncGenerator, Callable
 
 import firebase_admin
 from firebase_admin import auth as firebase_auth, credentials, firestore as fb_firestore
-from fastapi import FastAPI, Form, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
@@ -26,7 +25,6 @@ from .firestore_service import (
     get_pipeline,
     get_user_pipelines,
     get_user_status,
-    mark_paid,
     save_pipeline_step,
 )
 from .orchestrator import (
@@ -471,41 +469,6 @@ async def resubmit_history(
     threading.Thread(target=worker, daemon=True).start()
     return {"job_id": job_id}
 
-
-@app.post("/webhook/kofi")
-async def webhook_kofi(data: str = Form(...)):
-    """Unauthenticated Ko-fi payment webhook. Secured by verification_token."""
-    kofi_token = os.getenv("KOFI_VERIFICATION_TOKEN", "")
-
-    try:
-        payload = json.loads(data)
-    except (json.JSONDecodeError, ValueError):
-        raise HTTPException(status_code=400, detail="Invalid payload")
-
-    if payload.get("verification_token") != kofi_token:
-        raise HTTPException(status_code=403, detail="Invalid verification token")
-
-    try:
-        amount = float(payload.get("amount", 0))
-    except (TypeError, ValueError):
-        return {"ok": True}
-
-    if amount < 10.0:
-        return {"ok": True}
-
-    message = payload.get("message") or ""
-    match = re.search(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", message)
-    if not match:
-        return {"ok": True}
-
-    email = match.group(0)
-    try:
-        kofi_user = firebase_auth.get_user_by_email(email)
-    except Exception:
-        return {"ok": True}
-
-    mark_paid(kofi_user.uid, email, amount)
-    return {"ok": True}
 
 
 @app.get("/user/status")

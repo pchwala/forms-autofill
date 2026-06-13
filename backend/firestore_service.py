@@ -28,7 +28,6 @@ def get_or_create_user(uid: str, email: str) -> None:
                 "free_used": False,
                 "paid": False,
                 "paid_at": None,
-                "kofi_email": None,
             }
         )
 
@@ -50,16 +49,6 @@ def consume_free_use(uid: str) -> None:
         return
     ref.update({"free_used": True})
 
-
-def mark_paid(uid: str, kofi_email: str, amount: float) -> None:
-    """Record a successful Ko-fi payment."""
-    _client().collection("users").document(uid).update(
-        {
-            "paid": True,
-            "paid_at": datetime.now(tz=timezone.utc),
-            "kofi_email": kofi_email,
-        }
-    )
 
 
 def get_user_status(uid: str) -> dict[str, bool]:

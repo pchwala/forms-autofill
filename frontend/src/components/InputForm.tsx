@@ -29,9 +29,7 @@ export default function InputForm({ onStart, disabled, freeUsed, paid }: Props) 
           You've used your free run.
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Running multi-step AI agents can get pricey, so as an indie developer I can only offer one
-          free run per user. If you find it useful, fuel my caffeine addiction — tip me €10+ on Ko-fi
-          and <strong>include your email</strong> in the payment message to unlock unlimited access.
+          Premium access is coming soon. Stay tuned!
         </Typography>
         <Typography variant="body2" color="text.secondary">
           This project is also open source at{' '}
@@ -40,17 +38,6 @@ export default function InputForm({ onStart, disabled, freeUsed, paid }: Props) 
           </a>
           {' '}— if you're a developer, feel free to run your own local instance for free!
         </Typography>
-        <Box>
-          <Button
-            variant="contained"
-            component="a"
-            href="https://ko-fi.com/pchwala"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Donate on Ko-fi
-          </Button>
-        </Box>
       </Box>
     );
   }
