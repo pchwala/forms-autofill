@@ -57,8 +57,14 @@ def _load_firebase_credentials() -> credentials.Base:
         raise ValueError("FIREBASE_CREDENTIALS_JSON is required")
 
     # Accept either a file path or raw JSON content in the env var.
-    if pathlib.Path(creds_env).is_file():
-        return credentials.Certificate(creds_env)
+    # A relative path is resolved both against the current working directory and
+    # against this package directory (uvicorn is typically launched from the repo
+    # root, while the credentials file lives next to this module in backend/).
+    candidate = pathlib.Path(creds_env)
+    if not candidate.is_file():
+        candidate = pathlib.Path(__file__).resolve().parent / creds_env
+    if candidate.is_file():
+        return credentials.Certificate(str(candidate))
 
     try:
         creds_data = json.loads(creds_env)
