@@ -15,10 +15,12 @@ import AuthGuard from './components/AuthGuard';
 import { usePipeline } from './hooks/usePipeline';
 import { useAuth } from './hooks/useAuth';
 import { useCredits } from './hooks/useCredits';
+import { useBilling } from './hooks/useBilling';
 
 export default function App() {
   const { getToken, user, loading: authLoading, isAnonymous, signInWithGoogle, signOut } = useAuth();
   const { credits, refresh: refreshCredits } = useCredits(getToken, user, authLoading);
+  const { confirm } = useBilling(getToken);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [paywallOpen, setPaywallOpen] = useState(false);
   const [pendingCodes, setPendingCodes] = useState<string[] | null>(null);
@@ -41,7 +43,7 @@ export default function App() {
 
   const hasCredits = credits > 0;
 
-  // After auth resolves, restore an in-flight preview from a prior reload / Stripe redirect.
+  // After auth resolves, restore an in-flight preview and handle Stripe return params.
   const restoredRef = useRef(false);
   useEffect(() => {
     if (authLoading) return;
@@ -49,10 +51,45 @@ export default function App() {
     if (restoredRef.current) return;
     restoredRef.current = true;
     void (async () => {
-      const pending = await restore();
-      if (pending) setCount(pending.count);
+      const params = new URLSearchParams(window.location.search);
+      const checkoutStatus = params.get('checkout');
+      const sessionId = params.get('session_id');
+
+      if (checkoutStatus) {
+        // Strip Stripe params from the URL immediately so a refresh doesn't re-trigger.
+        const clean = window.location.pathname;
+        window.history.replaceState(null, '', clean);
+      }
+
+      if (checkoutStatus === 'success' && sessionId) {
+        // Confirm the session (idempotent — safe even if the webhook already ran).
+        try {
+          await confirm(sessionId);
+        } catch {
+          // Non-fatal: credits may already have been granted by the webhook.
+        }
+        await refreshCredits();
+        const pending = await restore();
+        if (pending) {
+          setCount(pending.count);
+          // Auto-retry submit if we now have enough credits.
+          if (pending.selectedCodes && pending.selectedCodes.length > 0) {
+            void runSubmit(pending.selectedCodes);
+          }
+        }
+      } else if (checkoutStatus === 'cancel') {
+        // Restore the preview so the user can pick a pack again.
+        const pending = await restore();
+        if (pending) setCount(pending.count);
+        setPaywallOpen(true);
+      } else {
+        // Normal load — just restore any in-flight preview.
+        const pending = await restore();
+        if (pending) setCount(pending.count);
+      }
     })();
-  }, [authLoading, user, restore]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, user]);
 
   async function handleStart(url: string, c: number, desirePrompt: string) {
     setCount(c);
@@ -86,14 +123,6 @@ export default function App() {
     }
   }
 
-  async function handlePaid() {
-    await refreshCredits();
-    setPaywallOpen(false);
-    const codes = pendingCodes;
-    setPendingCodes(null);
-    if (codes) void runSubmit(codes);
-  }
-
   function handlePaywallClose() {
     setPaywallOpen(false);
     setPendingCodes(null);
@@ -122,7 +151,8 @@ export default function App() {
             open={paywallOpen}
             getToken={getToken}
             onClose={handlePaywallClose}
-            onPaid={() => void handlePaid()}
+            creditsNeeded={count}
+            creditsHeld={credits}
           />
           <Container maxWidth="lg" sx={{ py: 6 }}>
             <HeroSection />

@@ -153,11 +153,13 @@ export default function PreviewResults({ preview, count, hasCredits, busy, onSub
           disabled={noneSelected || busy}
           onClick={() => onSubmit(selected)}
         >
-          {hasCredits ? `Generate & submit ${count} responses` : `Unlock & submit ${count} responses`}
+          {hasCredits
+            ? `Generate & submit ${count} responses (${count} credits)`
+            : `Unlock & submit (${count} credits needed)`}
         </Button>
         {!hasCredits && (
           <Typography variant="body2" color="text.secondary">
-            Submitting requires a credit — you'll be prompted to unlock.
+            You'll be redirected to checkout — your preview is saved.
           </Typography>
         )}
       </Box>

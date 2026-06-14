@@ -5,3 +5,4 @@ fastapi>=0.111.0
 uvicorn[standard]>=0.29.0
 firebase-admin>=6.0
 python-multipart
+stripe>=8.0

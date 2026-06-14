@@ -9,8 +9,9 @@ import uuid
 from typing import AsyncGenerator, Callable
 
 import firebase_admin
+import stripe
 from firebase_admin import auth as firebase_auth, credentials, firestore as fb_firestore
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
@@ -38,8 +39,18 @@ from .orchestrator import (
 )
 from .preview import compute_preview, filter_and_renormalize_personas
 
-# Credits granted per placeholder "payment". Stripe will replace /credits/grant later.
-CREDITS_PER_PURCHASE = int(os.getenv("CREDITS_PER_PURCHASE", "1"))
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
+_STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+_APP_URL = os.getenv(
+    "APP_URL",
+    os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")[0].strip(),
+)
+
+PACKS: dict[str, dict] = {
+    "small":  {"credits": 20,  "usd": 99,   "pln": 499},
+    "medium": {"credits": 100, "usd": 425,  "pln": 2125},
+    "large":  {"credits": 200, "usd": 750,  "pln": 3750},
+}
 
 app = FastAPI(title="Forms Autofill API")
 
@@ -336,13 +347,114 @@ async def get_pipeline_status(
     }
 
 
-@app.post("/credits/grant")
-async def credits_grant(authorization: str | None = Header(default=None)):
-    """Placeholder paywall: grants credits without real payment.
+# ---------------------------------------------------------------------------
+# Billing — Stripe Checkout
+# ---------------------------------------------------------------------------
 
-    Replace with Stripe Checkout session creation + webhook-driven add_credits later.
+
+async def _fulfill_checkout(session: dict) -> None:
+    """Grant credits for a completed Stripe Checkout session (idempotent)."""
+    uid = session["metadata"]["uid"]
+    credits = int(session["metadata"]["credits"])
+    add_credits(uid, credits, idempotency_key=session["id"])
+
+
+@app.get("/billing/packs")
+async def billing_packs():
+    """Return available credit packs (no auth required)."""
+    return PACKS
+
+
+class CheckoutRequest(BaseModel):
+    pack: str
+    currency: str
+    quantity: int = 1
+
+
+@app.post("/billing/checkout")
+async def billing_checkout(
+    req: CheckoutRequest, authorization: str | None = Header(default=None)
+):
+    """Create a Stripe Checkout Session and return its URL."""
+    user = _verify(authorization)
+    uid = user["uid"]
+
+    if req.pack not in PACKS:
+        raise HTTPException(status_code=400, detail=f"Unknown pack: {req.pack}")
+    if req.currency not in ("usd", "pln"):
+        raise HTTPException(status_code=400, detail="currency must be 'usd' or 'pln'")
+    if req.quantity < 1:
+        raise HTTPException(status_code=400, detail="quantity must be at least 1")
+
+    pack = PACKS[req.pack]
+    total_credits = pack["credits"] * req.quantity
+    product_name = f"{pack['credits']} credits"
+
+    try:
+        session = stripe.checkout.Session.create(
+            mode="payment",
+            line_items=[
+                {
+                    "price_data": {
+                        "currency": req.currency,
+                        "unit_amount": pack[req.currency],
+                        "product_data": {"name": product_name},
+                    },
+                    "quantity": req.quantity,
+                }
+            ],
+            metadata={"uid": uid, "credits": str(total_credits)},
+            success_url=f"{_APP_URL}/?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{_APP_URL}/?checkout=cancel",
+        )
+    except stripe.StripeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {"url": session.url}
+
+
+@app.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    """Stripe webhook endpoint — verifies signature and fulfills completed checkouts."""
+    body = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+
+    try:
+        event = stripe.Webhook.construct_event(body, sig_header, _STRIPE_WEBHOOK_SECRET)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid payload")
+    except stripe.errors.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    if event["type"] == "checkout.session.completed":
+        await _fulfill_checkout(event["data"]["object"])
+
+    return {"ok": True}
+
+
+class ConfirmRequest(BaseModel):
+    session_id: str
+
+
+@app.post("/billing/confirm")
+async def billing_confirm(
+    req: ConfirmRequest, authorization: str | None = Header(default=None)
+):
+    """On-return fallback: confirm a Stripe session and grant credits if paid.
+
+    Called by the frontend when returning from Stripe Checkout, so fulfillment
+    doesn't depend on the webhook arriving first. Idempotent — safe to call even
+    if the webhook already ran.
     """
     user = _verify(authorization)
-    get_or_create_user(user["uid"], user["email"])
-    new_balance = add_credits(user["uid"], CREDITS_PER_PURCHASE)
-    return {"credits": new_balance}
+    uid = user["uid"]
+
+    try:
+        session = stripe.checkout.Session.retrieve(req.session_id)
+    except stripe.StripeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    if session.get("payment_status") == "paid" and session.get("metadata", {}).get("uid") == uid:
+        await _fulfill_checkout(session)
+
+    return {"credits": get_credits(uid)}
