@@ -96,7 +96,12 @@ def step5_submit(
     responses: list[dict],
     total_responses: int,
     emit: Emit,
-) -> None:
+) -> int:
+    """Submit responses (looping in batches when total_responses exceeds the unique count).
+
+    Returns the number of responses that were confirmed as submitted — this is what the
+    user is charged for (1 credit per confirmed submission).
+    """
     total_batches = math.ceil(total_responses / len(responses))
     emit({
         "type": "step",
@@ -107,6 +112,7 @@ def step5_submit(
     config = json.loads(config_path.read_text(encoding="utf-8"))
     filler = FormFiller(config)
     submitted = 0
+    succeeded = 0
     current_responses = list(responses)
 
     for batch in range(1, total_batches + 1):
@@ -128,11 +134,12 @@ def step5_submit(
             else:
                 emit(event)
 
-        filler.submit_range(current_responses, 0, batch_size, emit=_batch_emit)
+        succeeded += filler.submit_range(current_responses, 0, batch_size, emit=_batch_emit)
         submitted += batch_size
 
         if submitted < total_responses:
             # Shuffle for the next batch
             random.shuffle(current_responses)
 
-    emit({"type": "step", "step": 5, "status": "done", "message": f"All {submitted} responses submitted"})
+    emit({"type": "step", "step": 5, "status": "done", "message": f"{succeeded}/{submitted} responses submitted"})
+    return succeeded

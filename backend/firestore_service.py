@@ -39,39 +39,68 @@ def get_credits(uid: str) -> int:
     return int(doc.to_dict().get("credits", 0))
 
 
-def add_credits(uid: str, n: int) -> int:
+def add_credits(uid: str, n: int, idempotency_key: str | None = None) -> int:
     """Add n credits to the user (creating the field if missing); return the new balance.
 
-    Used by the placeholder paywall; Stripe will call this from its webhook later.
+    Used by the Stripe webhook + confirm endpoints. When ``idempotency_key`` is given
+    (e.g. a Stripe Checkout session id), the grant is recorded in
+    ``credit_grants/{idempotency_key}`` inside the same transaction; a repeated call with
+    the same key is a no-op that returns the already-credited balance. This makes webhook
+    retries and the on-return confirm call safe to run more than once.
     """
+    user_ref = _client().collection("users").document(uid)
+    grant_ref = (
+        _client().collection("credit_grants").document(idempotency_key)
+        if idempotency_key
+        else None
+    )
+
+    @firestore.transactional
+    def _txn(transaction) -> int:
+        # Reads must precede writes within a Firestore transaction.
+        user_snapshot = user_ref.get(transaction=transaction)
+        if grant_ref is not None:
+            grant_snapshot = grant_ref.get(transaction=transaction)
+            if grant_snapshot.exists:
+                return int(grant_snapshot.to_dict().get("new_balance", 0))
+
+        current = int(user_snapshot.to_dict().get("credits", 0)) if user_snapshot.exists else 0
+        new_balance = current + n
+        transaction.set(user_ref, {"credits": new_balance}, merge=True)
+        if grant_ref is not None:
+            transaction.set(
+                grant_ref,
+                {
+                    "uid": uid,
+                    "amount": n,
+                    "new_balance": new_balance,
+                    "granted_at": datetime.now(tz=timezone.utc),
+                },
+            )
+        return new_balance
+
+    return _txn(_client().transaction())
+
+
+def consume_credits(uid: str, n: int) -> int:
+    """Atomically deduct up to n credits; return the number actually deducted.
+
+    Charging happens after a submit run, so n is the count of responses that confirmed
+    (already pre-checked to be <= balance). Deducting ``min(current, n)`` guards against a
+    balance that changed between the pre-check and the charge.
+    """
+    if n <= 0:
+        return 0
     ref = _client().collection("users").document(uid)
 
     @firestore.transactional
     def _txn(transaction) -> int:
         snapshot = ref.get(transaction=transaction)
         current = int(snapshot.to_dict().get("credits", 0)) if snapshot.exists else 0
-        new_balance = current + n
-        transaction.set(ref, {"credits": new_balance}, merge=True)
-        return new_balance
-
-    return _txn(_client().transaction())
-
-
-def consume_credit(uid: str) -> bool:
-    """Atomically decrement one credit if the balance is positive.
-
-    Returns True if a credit was consumed, False if the balance was already 0.
-    """
-    ref = _client().collection("users").document(uid)
-
-    @firestore.transactional
-    def _txn(transaction) -> bool:
-        snapshot = ref.get(transaction=transaction)
-        current = int(snapshot.to_dict().get("credits", 0)) if snapshot.exists else 0
-        if current <= 0:
-            return False
-        transaction.update(ref, {"credits": current - 1})
-        return True
+        deducted = min(current, n)
+        if deducted > 0:
+            transaction.update(ref, {"credits": current - deducted})
+        return deducted
 
     return _txn(_client().transaction())
 

@@ -91,7 +91,7 @@ class FormFiller:
                 f"final URL was {resp.url!r} (HTTP {resp.status_code})."
             )
 
-    def submit_range(self, responses: list, start: int, count: int, emit: Callable[[dict], None] | None = None) -> None:
+    def submit_range(self, responses: list, start: int, count: int, emit: Callable[[dict], None] | None = None) -> int:
         """Submit *count* responses from *responses* beginning at *start*.
 
         Args:
@@ -99,8 +99,12 @@ class FormFiller:
             start: Index of the first response to submit (0-based).
             count: How many responses to submit.
             emit: Optional callback to stream progress events to the frontend.
+
+        Returns:
+            The number of responses that were confirmed as submitted (failures excluded).
         """
         subset = responses[start: start + count]
+        succeeded = 0
 
         with requests.Session() as session:
             session.headers.update({
@@ -118,6 +122,7 @@ class FormFiller:
                 )
                 try:
                     self.submit(session, response)
+                    succeeded += 1
                     print("  ✓ Submitted.")
                 except RuntimeError as exc:
                     print(f"  ✗ Failed: {exc}")
@@ -128,6 +133,8 @@ class FormFiller:
                 # Small random delay to avoid triggering spam detection.
                 if i < start + len(subset) - 1:
                     time.sleep(random.uniform(0.5, 1.5))
+
+        return succeeded
 
 
 def main() -> None:

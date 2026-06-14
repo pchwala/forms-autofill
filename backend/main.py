@@ -18,9 +18,10 @@ from pydantic import BaseModel, field_validator
 from .firestore_service import (
     add_credits,
     complete_pipeline,
-    consume_credit,
+    consume_credits,
     create_pipeline,
     fail_pipeline,
+    get_credits,
     get_or_create_user,
     get_user_pipelines,
     get_user_status,
@@ -276,8 +277,10 @@ async def submit_pipeline(
     req: SubmitRequest,
     authorization: str | None = Header(default=None),
 ):
-    """Paid phase: consume a credit, then generate + shuffle + submit responses for the
-    selected personas. Returns 402 when the user has no credits."""
+    """Paid phase: generate + shuffle + submit responses for the selected personas, then
+    charge 1 credit per confirmed submission. Returns 402 when the balance can't cover the
+    requested response count. Credits are deducted *after* submission, so nothing is consumed
+    (and nothing needs refunding) if the run fails."""
     user = _verify(authorization)
     uid = user["uid"]
 
@@ -287,9 +290,10 @@ async def submit_pipeline(
     if not AUTH_DISABLED and pipe.get("uid") != uid:
         raise HTTPException(status_code=403, detail="Not your pipeline")
 
-    if not AUTH_DISABLED:
-        if not consume_credit(uid):
-            raise HTTPException(status_code=402, detail="No credits; payment required")
+    # 1 credit = 1 submitted response. Require enough balance up front; the actual charge
+    # (successful submissions only) is applied by the worker once the run completes.
+    if not AUTH_DISABLED and get_credits(uid) < req.total_responses:
+        raise HTTPException(status_code=402, detail="Insufficient credits; payment required")
 
     config_path: pathlib.Path = pipe["config_path"]
     strategy_path: pathlib.Path = pipe["strategy_path"]
@@ -299,8 +303,6 @@ async def submit_pipeline(
     try:
         filtered = filter_and_renormalize_personas(strategy_data, req.selected_persona_codes)
     except ValueError as exc:
-        if not AUTH_DISABLED:
-            add_credits(uid, 1)  # refund — submission never ran
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # Write a filtered strategy file for the response generator to consume.
@@ -322,17 +324,17 @@ async def submit_pipeline(
                 config_path, filtered_path, req.total_responses, emit, pipeline_id=fs_id
             )
             shuffled = step4_shuffle(responses, emit)
-            step5_submit(config_path, shuffled, req.total_responses, emit)
+            succeeded = step5_submit(config_path, shuffled, req.total_responses, emit)
+            if not AUTH_DISABLED:
+                consume_credits(uid, succeeded)  # charge only confirmed submissions
+                complete_pipeline(fs_id)
             pipe["status"] = "completed"
             _jobs[job_id]["status"] = "done"
             _jobs[job_id]["result"] = shuffled
-            if not AUTH_DISABLED:
-                complete_pipeline(fs_id)
-            emit({"type": "done", "total": req.total_responses, "pipeline_id": pipeline_id})
+            emit({"type": "done", "total": succeeded, "pipeline_id": pipeline_id})
         except Exception as exc:
-            pipe["status"] = "preview_ready"  # allow retry
+            pipe["status"] = "preview_ready"  # allow retry; nothing was charged
             if not AUTH_DISABLED:
-                add_credits(uid, 1)  # refund the credit on failure
                 fail_pipeline(fs_id, str(exc))
             _jobs[job_id]["status"] = "error"
             _jobs[job_id]["error"] = str(exc)
