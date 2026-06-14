@@ -23,6 +23,7 @@ from .firestore_service import (
     fail_pipeline,
     get_credits,
     get_or_create_user,
+    get_pipeline,
     get_user_pipelines,
     get_user_status,
     save_pipeline_step,
@@ -82,11 +83,41 @@ if not AUTH_DISABLED:
     firebase_admin.initialize_app(_cred)
     fb_firestore.client()  # Validate Firestore connection at startup
 
+# _jobs holds the SSE queue for a *live* run only. It is intentionally in-memory: a dead
+# process means a dead run, and credits are charged after submission (so no money rides on
+# it). It is never the source of truth for pipeline state.
 _jobs: dict[str, dict] = {}
-# Preview/submit pipelines held in-process between the free preview and the paid
-# submit (the placeholder paywall is a dialog, so the process stays up in between).
-# Firestore persistence (when authed) is for history; this is the submit source of truth.
-_pipelines: dict[str, dict] = {}
+
+# Firestore is the authoritative store for pipeline records (see _load_pipeline_record).
+# _dev_pipelines is a minimal in-memory fallback used ONLY when AUTH_DISABLED (no Firestore);
+# we always run with auth enabled now, so this is slated for removal.
+_dev_pipelines: dict[str, dict] = {}
+
+
+def _load_pipeline_record(pipeline_id: str, uid: str) -> dict | None:
+    """Return the persisted pipeline record needed to run a submit, or None if unavailable.
+
+    Shape: {uid, base_name, form_config, strategy, preview, status}. Prod reads Firestore;
+    dev reads the in-memory fallback. Returns None when the record is missing, not owned by
+    the caller, or the form_config/strategy haven't been persisted yet (preview not ready).
+    """
+    if AUTH_DISABLED:
+        return _dev_pipelines.get(pipeline_id)
+    doc = get_pipeline(pipeline_id, uid)
+    if doc is None:
+        return None
+    form_config = doc.get("step_form_config")
+    strategy = doc.get("step_strategy")
+    if form_config is None or strategy is None:
+        return None
+    return {
+        "uid": doc.get("user_uid"),
+        "base_name": doc.get("base_name"),
+        "form_config": form_config,
+        "strategy": strategy,
+        "preview": doc.get("preview"),
+        "status": doc.get("status"),
+    }
 
 
 def _verify(authorization: str | None) -> dict[str, str]:
@@ -206,19 +237,9 @@ async def preview(req: PreviewRequest, authorization: str | None = Header(defaul
     if not AUTH_DISABLED:
         get_or_create_user(uid, email)
 
+    # One id end-to-end: the Firestore doc id == the id the client holds == the dev key.
     pipeline_id = str(uuid.uuid4())
-    _pipelines[pipeline_id] = {
-        "uid": uid,
-        "status": "in_progress",
-        "form_url": req.form_url,
-        "total_responses": req.total_responses,
-        "desire_prompt": req.desire_prompt,
-        "config_path": None,
-        "strategy_path": None,
-        "base_name": None,
-        "preview": None,
-        "fs_id": None,  # Firestore pipeline id (when authed)
-    }
+    fs_id = pipeline_id if not AUTH_DISABLED else None
 
     loop = asyncio.get_running_loop()
     job_id, _, emit = _make_job(loop)
@@ -232,10 +253,9 @@ async def preview(req: PreviewRequest, authorization: str | None = Header(defaul
             config_data = json.loads(config_path.read_text(encoding="utf-8"))
             form_title = config_data.get("form_title", "")
 
-            fs_id = None
             if not AUTH_DISABLED:
-                fs_id = create_pipeline(
-                    uid, req.form_url, form_title, req.total_responses, base_name,
+                create_pipeline(
+                    pipeline_id, uid, req.form_url, form_title, req.total_responses, base_name,
                     desire_prompt=req.desire_prompt,
                 )
                 save_pipeline_step(fs_id, "form_config", config_data)
@@ -246,23 +266,26 @@ async def preview(req: PreviewRequest, authorization: str | None = Header(defaul
             strategy_data = json.loads(strategy_path.read_text(encoding="utf-8"))
             preview_data = compute_preview(strategy_data, config_data)
 
-            _pipelines[pipeline_id].update(
-                {
-                    "status": "preview_ready",
-                    "config_path": config_path,
-                    "strategy_path": strategy_path,
+            if AUTH_DISABLED:
+                _dev_pipelines[pipeline_id] = {
+                    "uid": uid,
                     "base_name": base_name,
+                    "form_config": config_data,
+                    "strategy": strategy_data,
                     "preview": preview_data,
-                    "fs_id": fs_id,
+                    "total_responses": req.total_responses,
+                    "status": "preview_ready",
                 }
-            )
-            if not AUTH_DISABLED:
+            else:
                 update_pipeline(fs_id, {"status": "preview_ready", "preview": preview_data})
 
             emit({"type": "result", "key": "preview", "data": preview_data})
             emit({"type": "done", "pipeline_id": pipeline_id})
         except Exception as exc:
-            _pipelines[pipeline_id]["status"] = "failed"
+            if AUTH_DISABLED:
+                _dev_pipelines.pop(pipeline_id, None)
+            else:
+                fail_pipeline(fs_id, str(exc))
             _jobs[job_id]["status"] = "error"
             _jobs[job_id]["error"] = str(exc)
             emit({"type": "error", "message": str(exc)})
@@ -283,31 +306,23 @@ async def submit_pipeline(
     (and nothing needs refunding) if the run fails."""
     user = _verify(authorization)
     uid = user["uid"]
+    fs_id = pipeline_id if not AUTH_DISABLED else None
 
-    pipe = _pipelines.get(pipeline_id)
-    if pipe is None or pipe.get("status") not in ("preview_ready", "completed"):
+    record = _load_pipeline_record(pipeline_id, uid)
+    if record is None or record.get("status") == "in_progress":
         raise HTTPException(status_code=404, detail="Pipeline not found or not ready")
-    if not AUTH_DISABLED and pipe.get("uid") != uid:
-        raise HTTPException(status_code=403, detail="Not your pipeline")
 
     # 1 credit = 1 submitted response. Require enough balance up front; the actual charge
     # (successful submissions only) is applied by the worker once the run completes.
     if not AUTH_DISABLED and get_credits(uid) < req.total_responses:
         raise HTTPException(status_code=402, detail="Insufficient credits; payment required")
 
-    config_path: pathlib.Path = pipe["config_path"]
-    strategy_path: pathlib.Path = pipe["strategy_path"]
-    fs_id = pipe.get("fs_id")
-    strategy_data = json.loads(strategy_path.read_text(encoding="utf-8"))
+    form_config = record["form_config"]
 
     try:
-        filtered = filter_and_renormalize_personas(strategy_data, req.selected_persona_codes)
+        filtered = filter_and_renormalize_personas(record["strategy"], req.selected_persona_codes)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    # Write a filtered strategy file for the response generator to consume.
-    filtered_path = strategy_path.with_name(strategy_path.stem + "_filtered.json")
-    filtered_path.write_text(json.dumps(filtered, ensure_ascii=False, indent=2), encoding="utf-8")
 
     if not AUTH_DISABLED:
         update_pipeline(
@@ -321,27 +336,57 @@ async def submit_pipeline(
     def worker() -> None:
         try:
             responses = step3_generate(
-                config_path, filtered_path, req.total_responses, emit, pipeline_id=fs_id
+                form_config, filtered, req.total_responses, emit, pipeline_id=fs_id
             )
             shuffled = step4_shuffle(responses, emit)
-            succeeded = step5_submit(config_path, shuffled, req.total_responses, emit)
+            succeeded = step5_submit(form_config, shuffled, req.total_responses, emit)
             if not AUTH_DISABLED:
                 consume_credits(uid, succeeded)  # charge only confirmed submissions
                 complete_pipeline(fs_id)
-            pipe["status"] = "completed"
+            else:
+                _dev_pipelines[pipeline_id]["status"] = "completed"
             _jobs[job_id]["status"] = "done"
             _jobs[job_id]["result"] = shuffled
             emit({"type": "done", "total": succeeded, "pipeline_id": pipeline_id})
         except Exception as exc:
-            pipe["status"] = "preview_ready"  # allow retry; nothing was charged
+            # Nothing was charged; leave the record resubmittable.
             if not AUTH_DISABLED:
                 fail_pipeline(fs_id, str(exc))
+            else:
+                _dev_pipelines[pipeline_id]["status"] = "preview_ready"
             _jobs[job_id]["status"] = "error"
             _jobs[job_id]["error"] = str(exc)
             emit({"type": "error", "message": str(exc)})
 
     threading.Thread(target=worker, daemon=True).start()
     return {"job_id": job_id}
+
+
+@app.get("/pipelines/{pipeline_id}")
+async def get_pipeline_status(
+    pipeline_id: str, authorization: str | None = Header(default=None)
+):
+    """Restore a pipeline's preview/status from the authoritative store (used by the frontend
+    after a reload or the Stripe redirect, so nothing is re-run)."""
+    user = _verify(authorization)
+    uid = user["uid"]
+    if AUTH_DISABLED:
+        rec = _dev_pipelines.get(pipeline_id)
+        if rec is None:
+            raise HTTPException(status_code=404, detail="Pipeline not found")
+        return {
+            "status": rec.get("status"),
+            "preview": rec.get("preview"),
+            "total_responses": rec.get("total_responses"),
+        }
+    doc = get_pipeline(pipeline_id, uid)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+    return {
+        "status": doc.get("status"),
+        "preview": doc.get("preview"),
+        "total_responses": doc.get("total_responses"),
+    }
 
 
 @app.post("/credits/grant")

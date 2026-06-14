@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import Box from '@mui/material/Box';
@@ -35,11 +35,25 @@ export default function App() {
     submitProgress,
     startPreview,
     submitResponses,
+    restore,
     reset,
     setStatus,
   } = usePipeline(getToken);
 
   const hasCredits = AUTH_DISABLED || credits > 0;
+
+  // After auth resolves, restore an in-flight preview from a prior reload / Stripe redirect.
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (!AUTH_DISABLED && authLoading) return;
+    if (!AUTH_DISABLED && !user) return;
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    void (async () => {
+      const pending = await restore();
+      if (pending) setCount(pending.count);
+    })();
+  }, [authLoading, user, restore]);
 
   async function handleStart(url: string, c: number, desirePrompt: string) {
     setCount(c);

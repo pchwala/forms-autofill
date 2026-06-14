@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import uuid
 from datetime import datetime, timezone
 
 from firebase_admin import firestore
@@ -116,6 +115,7 @@ def get_user_status(uid: str) -> dict[str, int]:
 
 
 def create_pipeline(
+    pipeline_id: str,
     uid: str | None,
     form_url: str,
     form_title: str,
@@ -123,10 +123,13 @@ def create_pipeline(
     base_name: str,
     desire_prompt: str | None = None,
 ) -> str | None:
-    """Create a pipeline doc; returns pipeline_id or None when uid is None."""
+    """Create a pipeline doc under the given id; returns the id or None when uid is None.
+
+    The caller mints the id up front so the Firestore doc id is the same id the client holds
+    (one id end-to-end — no separate in-memory key).
+    """
     if uid is None:
         return None
-    pipeline_id = str(uuid.uuid4())
     _client().collection("pipelines").document(pipeline_id).set(
         {
             "user_uid": uid,

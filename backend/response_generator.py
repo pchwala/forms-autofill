@@ -265,11 +265,17 @@ class ResponseGenerator:
             f"an array of exactly {count} response objects."
         )
 
-    def generate(self, output_file: str | None = None, emit: Callable[[dict], None] | None = None) -> list:
+    def generate(
+        self,
+        output_file: str | None = None,
+        emit: Callable[[dict], None] | None = None,
+        strategy: dict | None = None,
+    ) -> list:
         config = self._config
 
-        strategy_path = pathlib.Path(config["strategy_file"])
-        strategy = json.loads(strategy_path.read_text(encoding="utf-8"))
+        if strategy is None:
+            # Standalone/CLI path: load the strategy from the file named in the config.
+            strategy = json.loads(pathlib.Path(config["strategy_file"]).read_text(encoding="utf-8"))
         total = config.get("total_responses", 100)
         personas = self._resolve_persona_counts(strategy["personas"], total)
 

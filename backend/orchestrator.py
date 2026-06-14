@@ -61,8 +61,8 @@ def step2_strategy(
 
 
 def step3_generate(
-    config_path: pathlib.Path,
-    strategy_path: pathlib.Path,
+    form_config: dict,
+    strategy: dict,
     total_responses: int,
     emit: Emit,
     pipeline_id: str | None = None,
@@ -70,10 +70,8 @@ def step3_generate(
     ai_count = min(total_responses, MAX_AI_RESPONSES)
     suffix = f" (reused in batches for {total_responses} total)" if total_responses > ai_count else ""
     emit({"type": "step", "step": 3, "status": "start", "message": f"Generating {ai_count} AI responses{suffix}"})
-    config = json.loads(config_path.read_text(encoding="utf-8"))
-    config["strategy_file"] = str(strategy_path)
-    config["total_responses"] = ai_count
-    responses = ResponseGenerator(config).generate(emit=emit)
+    config = {**form_config, "total_responses": ai_count}
+    responses = ResponseGenerator(config).generate(emit=emit, strategy=strategy)
     emit({"type": "result", "key": "responses", "data": responses})
     emit({"type": "step", "step": 3, "status": "done", "message": f"Generated {len(responses)} AI responses{suffix}"})
     firestore_service.save_pipeline_step(pipeline_id, "responses", responses)
@@ -92,7 +90,7 @@ def step4_shuffle(
 
 
 def step5_submit(
-    config_path: pathlib.Path,
+    form_config: dict,
     responses: list[dict],
     total_responses: int,
     emit: Emit,
@@ -109,8 +107,7 @@ def step5_submit(
         "status": "start",
         "message": f"Submitting {total_responses} responses in {total_batches} batch(es)",
     })
-    config = json.loads(config_path.read_text(encoding="utf-8"))
-    filler = FormFiller(config)
+    filler = FormFiller(form_config)
     submitted = 0
     succeeded = 0
     current_responses = list(responses)

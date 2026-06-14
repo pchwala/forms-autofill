@@ -66,6 +66,49 @@ async function buildHeaders(getToken: () => Promise<string>): Promise<Record<str
   return headers;
 }
 
+// ─── Pending-pipeline persistence (localStorage) ────────────────────────────
+// The backend pipeline record is authoritative (Firestore); localStorage only remembers
+// *what the user was doing* so a reload or the Stripe redirect can restore the preview and
+// resume the submit. Holds no business data beyond the id + the user's choices.
+const PENDING_KEY = 'forms-autofill:pending';
+
+export interface PendingPipeline {
+  pipelineId: string;
+  count: number;
+  selectedCodes?: string[];
+}
+
+function loadPending(): PendingPipeline | null {
+  try {
+    const raw = localStorage.getItem(PENDING_KEY);
+    return raw ? (JSON.parse(raw) as PendingPipeline) : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePending(p: PendingPipeline): void {
+  try {
+    localStorage.setItem(PENDING_KEY, JSON.stringify(p));
+  } catch {
+    /* storage unavailable — non-fatal */
+  }
+}
+
+function mergePending(patch: Partial<PendingPipeline>): void {
+  const current = loadPending();
+  if (!current) return;
+  savePending({ ...current, ...patch });
+}
+
+function clearPending(): void {
+  try {
+    localStorage.removeItem(PENDING_KEY);
+  } catch {
+    /* no-op */
+  }
+}
+
 export function usePipeline(getToken: () => Promise<string>) {
   const [status, setStatus] = useState<PipelineStatus>('idle');
   const [steps, setSteps] = useState<StepInfo[]>(makeSteps());
@@ -217,14 +260,53 @@ export function usePipeline(getToken: () => Promise<string>) {
       setPipelineId(pipeline_id);
       await openStream(job_id);
       setStatus('preview');
+      // Remember the run so a reload / Stripe redirect can restore this preview.
+      savePending({ pipelineId: pipeline_id, count: totalResponses });
     },
     [getToken, openStream],
   );
+
+  /**
+   * Restore a preview-ready pipeline from localStorage + the backend store (no re-run).
+   * Returns the pending intent (incl. count and selected personas) when it restored, else null.
+   */
+  const restore = useCallback(async (): Promise<PendingPipeline | null> => {
+    const pending = loadPending();
+    if (!pending) return null;
+    try {
+      const res = await fetch(`${API_URL}/pipelines/${pending.pipelineId}`, {
+        headers: await buildHeaders(getToken),
+      });
+      if (!res.ok) {
+        clearPending();
+        return null;
+      }
+      const data = (await res.json()) as {
+        status: string;
+        preview: PreviewData | null;
+      };
+      if (!data.preview) {
+        clearPending();
+        return null;
+      }
+      setPipelineId(pending.pipelineId);
+      setPreview(data.preview);
+      setSteps((prev) =>
+        prev.map((s, i) => (i <= 1 ? { ...s, status: 'done' } : { ...s, status: 'pending' })),
+      );
+      setStatus('preview');
+      return pending;
+    } catch {
+      return null;
+    }
+  }, [getToken]);
 
   /** Paid phase: generate + submit responses for the selected personas. */
   const submitResponses = useCallback(
     async (selectedCodes: string[], totalResponses: number): Promise<boolean> => {
       if (!pipelineId) return false;
+      // Persist the chosen personas so a Stripe redirect mid-paywall can resume this submit.
+      mergePending({ selectedCodes });
       setStatus('submitting');
       setError(null);
       setSubmitProgress(null);
@@ -252,6 +334,7 @@ export function usePipeline(getToken: () => Promise<string>) {
       setSubmitProgress(null);
       setSteps((prev) => prev.map((s) => ({ ...s, status: 'done' })));
       setStatus('done');
+      clearPending();
       return true;
     },
     [appendLog, getToken, openStream, pipelineId],
@@ -259,6 +342,7 @@ export function usePipeline(getToken: () => Promise<string>) {
 
   const reset = useCallback(() => {
     stopStream();
+    clearPending();
     setStatus('idle');
     setSteps(makeSteps());
     setLog([]);
@@ -280,6 +364,7 @@ export function usePipeline(getToken: () => Promise<string>) {
     submitProgress,
     startPreview,
     submitResponses,
+    restore,
     reset,
     setStatus,
   };
