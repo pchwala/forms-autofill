@@ -44,19 +44,18 @@ def step2_strategy(
     strategy_data = json.loads(strategy_path.read_text(encoding="utf-8"))
     emit({"type": "result", "key": "strategy", "data": strategy_data})
     emit({"type": "step", "step": 2, "status": "done", "message": f"Strategy saved."})
-    if pipeline_id is not None:
-        base_name = config_path.name[: -len("_form_config.json")]
-        data_dir = config_path.parent
-        for step_key, suffix in [
-            ("research_basis", "_research_basis.json"),
-            ("research_analysis", "_research_analysis.json"),
-            ("strategy", "_strategy.json"),
-        ]:
-            fp = data_dir / f"{base_name}{suffix}"
-            if fp.exists():
-                firestore_service.save_pipeline_step(
-                    pipeline_id, step_key, json.loads(fp.read_text(encoding="utf-8"))
-                )
+    base_name = config_path.name[: -len("_form_config.json")]
+    data_dir = config_path.parent
+    for step_key, suffix in [
+        ("research_basis", "_research_basis.json"),
+        ("research_analysis", "_research_analysis.json"),
+        ("strategy", "_strategy.json"),
+    ]:
+        fp = data_dir / f"{base_name}{suffix}"
+        if fp.exists():
+            firestore_service.save_pipeline_step(
+                pipeline_id, step_key, json.loads(fp.read_text(encoding="utf-8"))
+            )
     return strategy_path
 
 

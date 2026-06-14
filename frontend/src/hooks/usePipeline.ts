@@ -174,7 +174,12 @@ export function usePipeline(getToken: () => Promise<string>) {
 
             while (true) {
               const { done, value } = await reader.read();
-              if (done) break;
+              if (done) {
+                // Stream closed without a terminal 'done'/'error' event — settle so the
+                // caller never hangs. A no-op if the promise was already resolved/rejected.
+                reject(new Error('Stream closed before completion'));
+                break;
+              }
               buffer += decoder.decode(value, { stream: true });
               const parts = buffer.split('\n\n');
               buffer = parts.pop() ?? '';

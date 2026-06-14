@@ -46,23 +46,20 @@ Create `backend/.env` (copy from the example):
 cp backend/.env.example backend/.env
 ```
 
-Edit `backend/.env` and set your OpenAI key plus auth bypass for local dev:
+Edit `backend/.env` and set your OpenAI key and Firebase credentials:
 
 ```dotenv
-# Skip Firebase auth for local development
-AUTH_DISABLED=true
-
 # Your OpenAI API key
 OPENAI_API_KEY=sk-...
 
 # Allow requests from the Vite dev server
 CORS_ORIGINS=http://localhost:5173
 
-# Set to "true" to use stub AI responses (no API tokens consumed)
-AI_SWITCH_STUB=false
+# Firebase Admin credentials — file path or raw JSON
+FIREBASE_CREDENTIALS_JSON=./firebase_credentials.json
 ```
 
-> **Firebase credentials** (`FIREBASE_CREDENTIALS_JSON`) are only required when `AUTH_DISABLED=false`. For local dev, leave `AUTH_DISABLED=true` and skip Firebase setup.
+> **Firebase credentials** (`FIREBASE_CREDENTIALS_JSON`) are required — auth is always enabled, including in local dev.
 
 #### Run the backend
 
@@ -98,10 +95,7 @@ Edit `frontend/.env.development`:
 # Backend URL
 VITE_API_URL=http://localhost:8000
 
-# Skip Firebase auth for local development
-VITE_AUTH_DISABLED=true
-
-# Firebase config — only needed when VITE_AUTH_DISABLED=false
+# Firebase config (required — auth is always enabled)
 VITE_FIREBASE_API_KEY=
 VITE_FIREBASE_AUTH_DOMAIN=
 VITE_FIREBASE_PROJECT_ID=
@@ -135,7 +129,7 @@ The app will be available at `http://localhost:5173`.
 ```bash
 docker build -t forms-autofill-backend ./backend
 docker run -p 8000:8000 \
-  -e AUTH_DISABLED=true \
   -e OPENAI_API_KEY=sk-... \
+  -e FIREBASE_CREDENTIALS_JSON="$(cat backend/firebase_credentials.json)" \
   forms-autofill-backend
 ```

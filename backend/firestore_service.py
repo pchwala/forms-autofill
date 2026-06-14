@@ -116,20 +116,18 @@ def get_user_status(uid: str) -> dict[str, int]:
 
 def create_pipeline(
     pipeline_id: str,
-    uid: str | None,
+    uid: str,
     form_url: str,
     form_title: str,
     total_responses: int,
     base_name: str,
     desire_prompt: str | None = None,
-) -> str | None:
-    """Create a pipeline doc under the given id; returns the id or None when uid is None.
+) -> str:
+    """Create a pipeline doc under the given id; returns the id.
 
     The caller mints the id up front so the Firestore doc id is the same id the client holds
-    (one id end-to-end — no separate in-memory key).
+    (one id end-to-end).
     """
-    if uid is None:
-        return None
     _client().collection("pipelines").document(pipeline_id).set(
         {
             "user_uid": uid,
@@ -149,26 +147,20 @@ def create_pipeline(
     return pipeline_id
 
 
-def update_pipeline(pipeline_id: str | None, fields: dict) -> None:
+def update_pipeline(pipeline_id: str, fields: dict) -> None:
     """Patch arbitrary top-level fields on a pipeline document."""
-    if pipeline_id is None:
-        return
     _client().collection("pipelines").document(pipeline_id).update(fields)
 
 
-def save_pipeline_step(pipeline_id: str | None, step_key: str, data: object) -> None:
+def save_pipeline_step(pipeline_id: str, step_key: str, data: object) -> None:
     """Persist a step's output JSON to the pipeline document."""
-    if pipeline_id is None:
-        return
     _client().collection("pipelines").document(pipeline_id).update(
         {f"step_{step_key}": data}
     )
 
 
-def complete_pipeline(pipeline_id: str | None) -> None:
+def complete_pipeline(pipeline_id: str) -> None:
     """Mark pipeline as completed."""
-    if pipeline_id is None:
-        return
     _client().collection("pipelines").document(pipeline_id).update(
         {
             "status": "completed",
@@ -177,10 +169,8 @@ def complete_pipeline(pipeline_id: str | None) -> None:
     )
 
 
-def fail_pipeline(pipeline_id: str | None, error: str) -> None:
+def fail_pipeline(pipeline_id: str, error: str) -> None:
     """Mark pipeline as failed with an error message."""
-    if pipeline_id is None:
-        return
     _client().collection("pipelines").document(pipeline_id).update(
         {"status": "failed", "error": error}
     )

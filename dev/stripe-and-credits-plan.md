@@ -29,9 +29,9 @@ Confirmed product decisions:
 
 | Pack | Credits | USD | PLN |
 |---|---|---|---|
-| Small | 10 | $0.99 (`usd: 99`) | 4.99 zł (`pln: 499`) |
-| Medium | 50 | $4.25 (`usd: 425`) — 15% off | 21.25 zł (`pln: 2125`) |
-| Large | 100 | $7.50 (`usd: 750`) — 25% off | 37.50 zł (`pln: 3750`) |
+| Small | 20 | $0.99 (`usd: 99`) | 4.99 zł (`pln: 499`) |
+| Medium | 100 | $4.25 (`usd: 425`) — 15% off | 21.25 zł (`pln: 2125`) |
+| Large | 200 | $7.50 (`usd: 750`) — 25% off | 37.50 zł (`pln: 3750`) |
 
 ---
 

@@ -10,7 +10,7 @@ import {
   type AuthError,
   type User,
 } from 'firebase/auth';
-import { auth, googleProvider, AUTH_DISABLED } from '../firebase';
+import { auth, googleProvider } from '../firebase';
 
 export interface AuthState {
   user: User | null;
@@ -23,10 +23,10 @@ export interface AuthState {
 
 export function useAuth(): AuthState {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(!AUTH_DISABLED);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (AUTH_DISABLED || !auth) {
+    if (!auth) {
       setLoading(false);
       return;
     }
@@ -50,7 +50,7 @@ export function useAuth(): AuthState {
   // Upgrade an anonymous account to Google (keeps the same uid/credits), or sign in
   // with Google directly if there's no anonymous session to link.
   const signInWithGoogle = useCallback(async () => {
-    if (AUTH_DISABLED || !auth || !googleProvider) return;
+    if (!auth || !googleProvider) return;
     const current = auth.currentUser;
     if (current?.isAnonymous) {
       try {
@@ -77,13 +77,12 @@ export function useAuth(): AuthState {
   }, []);
 
   const signOut = useCallback(async () => {
-    if (AUTH_DISABLED || !auth) return;
+    if (!auth) return;
     await firebaseSignOut(auth);
     // onAuthStateChanged will re-trigger anonymous sign-in.
   }, []);
 
   const getToken = useCallback(async (): Promise<string> => {
-    if (AUTH_DISABLED) return '';
     if (!user) return '';
     return user.getIdToken();
   }, [user]);

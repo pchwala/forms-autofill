@@ -4,7 +4,6 @@ import CssBaseline from '@mui/material/CssBaseline';
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
 import { darkTheme } from './theme/theme';
-import { AUTH_DISABLED } from './firebase';
 import Navbar from './components/layout/Navbar';
 import Footer from './components/layout/Footer';
 import HeroSection from './components/sections/HeroSection';
@@ -40,13 +39,13 @@ export default function App() {
     setStatus,
   } = usePipeline(getToken);
 
-  const hasCredits = AUTH_DISABLED || credits > 0;
+  const hasCredits = credits > 0;
 
   // After auth resolves, restore an in-flight preview from a prior reload / Stripe redirect.
   const restoredRef = useRef(false);
   useEffect(() => {
-    if (!AUTH_DISABLED && authLoading) return;
-    if (!AUTH_DISABLED && !user) return;
+    if (authLoading) return;
+    if (!user) return;
     if (restoredRef.current) return;
     restoredRef.current = true;
     void (async () => {

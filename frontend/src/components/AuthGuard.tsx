@@ -1,7 +1,6 @@
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 import { type ReactNode } from 'react';
-import { AUTH_DISABLED } from '../firebase';
 import { useAuth } from '../hooks/useAuth';
 
 interface Props {
@@ -10,10 +9,6 @@ interface Props {
 
 export default function AuthGuard({ children }: Props) {
   const { loading } = useAuth();
-
-  if (AUTH_DISABLED) {
-    return <>{children}</>;
-  }
 
   // While the (anonymous or Google) session is resolving, show a spinner.
   if (loading) {
