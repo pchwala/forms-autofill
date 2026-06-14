@@ -9,11 +9,11 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import Paper from '@mui/material/Paper';
-import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import InputForm from '../InputForm';
+import PreviewResults from '../PreviewResults';
 import PipelineProgress from '../PipelineProgress';
-import type { StepInfo } from '../../hooks/usePipeline';
+import type { PipelineStatus, PreviewData, StepInfo } from '../../hooks/usePipeline';
 
 interface SubmitProgress {
   current: number;
@@ -22,33 +22,19 @@ interface SubmitProgress {
   totalBatches?: number;
 }
 
-interface HistoryRecord {
-  pipelineId: string;
-  formTitle: string;
-  totalResponses: number;
-}
-
 interface Props {
-  status: string;
+  status: PipelineStatus;
   steps: StepInfo[];
   log: string[];
   results: Record<string, unknown>;
   error: string | null;
+  preview: PreviewData | null;
   submitProgress: SubmitProgress | null;
-  resultId: string | null;
-  sessionId: string | null;
-  historyRecord: HistoryRecord | null;
-  historyResubmitCount: number;
-  resubmitCount: number;
-  freeUsed?: boolean;
-  paid?: boolean;
-  onStart: (url: string, count: number) => void;
-  onResubmit: () => void;
+  count: number;
+  hasCredits: boolean;
+  onStart: (url: string, count: number, desirePrompt: string) => void;
+  onSubmit: (selectedCodes: string[]) => void;
   onReset: () => void;
-  onHistoryResubmit: () => void;
-  onHistoryResubmitCountChange: (count: number) => void;
-  onHistoryRecordClear: () => void;
-  onResubmitCountChange: (count: number) => void;
 }
 
 export default function PipelineSection({
@@ -57,170 +43,113 @@ export default function PipelineSection({
   log,
   results,
   error,
+  preview,
   submitProgress,
-  resultId,
-  sessionId,
-  historyRecord,
-  historyResubmitCount,
-  resubmitCount,
-  freeUsed,
-  paid,
+  count,
+  hasCredits,
   onStart,
-  onResubmit,
+  onSubmit,
   onReset,
-  onHistoryResubmit,
-  onHistoryResubmitCountChange,
-  onHistoryRecordClear,
-  onResubmitCountChange,
 }: Props) {
   const [reviewOpen, setReviewOpen] = useState(false);
 
   const isIdle = status === 'idle';
   const isRunning = status === 'running';
-  const isPaused = status === 'paused';
+  const isPreview = status === 'preview';
+  const isSubmitting = status === 'submitting';
   const isDone = status === 'done';
   const isError = status === 'error';
-  const canResubmit = isDone && (resultId !== null || sessionId !== null);
+  const busy = isRunning || isSubmitting;
 
   return (
     <>
       <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 2 }}>
         Run the pipeline
       </Typography>
-      <Paper
-        variant="outlined"
-        sx={{ p: 3, mt: 1.5, mb: 4, display: 'flex', flexDirection: 'column', gap: 3 }}
-      >
-        {/* History resubmit panel */}
-        {historyRecord && isIdle && (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <Box>
-              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.25 }}>
-                Resubmit from History
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {historyRecord.formTitle || 'Untitled form'}
-              </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-              <TextField
-                label="Responses"
-                type="number"
-                value={historyResubmitCount}
-                onChange={(e) => onHistoryResubmitCountChange(Math.min(1000, Math.max(1, parseInt(e.target.value, 10) || 1)))}
-                size="small"
-                slotProps={{ htmlInput: { min: 1, max: 1000 } }}
-                sx={{ width: 120 }}
-              />
-              <Button variant="contained" onClick={onHistoryResubmit}>
-                Resubmit
-              </Button>
-              <Button variant="outlined" color="error" onClick={onHistoryRecordClear}>
-                Cancel
-              </Button>
-            </Box>
+      <Paper variant="outlined" sx={{ p: 3, mt: 1.5, mb: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {/* Input form — hidden once we have a preview to focus on */}
+        {(isIdle || isRunning) && <InputForm onStart={onStart} disabled={busy} />}
+
+        {/* Stepper while anything is running */}
+        {(isRunning || isSubmitting || isDone) && (
+          <>
             <Divider />
-          </Box>
+            <PipelineProgress steps={steps} />
+          </>
         )}
 
-        {/* Input form — always visible, disabled while running */}
-        <InputForm onStart={onStart} disabled={isRunning || isPaused || isDone} freeUsed={freeUsed} paid={paid} />
-
-        <Divider />
-
-        {/* Button row — always visible */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Button
-            variant="outlined"
-            onClick={() => setReviewOpen(true)}
-            disabled={log.length === 0}
-          >
-            Review Details
-          </Button>
-          <Button variant="outlined" color="error" onClick={onReset} disabled={isIdle}>
-            Reset
-          </Button>
-        </Box>
-
-        {/* Stepper — always visible */}
-        <PipelineProgress steps={steps} />
-
-        {/* Current step message */}
-        {(log.length > 0 || submitProgress) && (
+        {/* Live status line */}
+        {(log.length > 0 || submitProgress) && !isPreview && (
           <Typography
             variant="body2"
-            sx={isRunning ? {
-              fontFamily: 'monospace',
-              color: 'transparent',
-              background: 'linear-gradient(90deg, #888 20%, #ddd 50%, #888 80%)',
-              backgroundSize: '250% 100%',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
-              animation: `${keyframes`
-                from { background-position: 240% 0%; }
-                to   { background-position: -100% 0%; }
-              `} 4s linear infinite`,
-            } : {
-              fontFamily: 'monospace',
-              color: 'text.secondary',
-            }}
+            sx={
+              busy
+                ? {
+                    fontFamily: 'monospace',
+                    color: 'transparent',
+                    background: 'linear-gradient(90deg, #888 20%, #ddd 50%, #888 80%)',
+                    backgroundSize: '250% 100%',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    backgroundClip: 'text',
+                    animation: `${keyframes`
+                      from { background-position: 240% 0%; }
+                      to   { background-position: -100% 0%; }
+                    `} 4s linear infinite`,
+                  }
+                : { fontFamily: 'monospace', color: 'text.secondary' }
+            }
           >
             {submitProgress
               ? (() => {
-                  const batchInfo = submitProgress.totalBatches && submitProgress.totalBatches > 1
-                    ? `Batch ${submitProgress.batch}/${submitProgress.totalBatches} — `
-                    : '';
+                  const batchInfo =
+                    submitProgress.totalBatches && submitProgress.totalBatches > 1
+                      ? `Batch ${submitProgress.batch}/${submitProgress.totalBatches} — `
+                      : '';
                   return `${batchInfo}Submitting responses to Google Form — ${submitProgress.current}/${submitProgress.total}`;
                 })()
               : log[log.length - 1]}
           </Typography>
         )}
 
-        {/* Done state */}
-        {isDone && (
-          <Alert severity="success">
-            Pipeline complete — all responses submitted successfully.
-          </Alert>
+        {/* Preview / persona selection */}
+        {isPreview && preview && (
+          <PreviewResults
+            preview={preview}
+            count={count}
+            hasCredits={hasCredits}
+            busy={busy}
+            onSubmit={onSubmit}
+          />
         )}
 
-        {/* Resubmit */}
-        {canResubmit && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-            <Typography variant="body2" color="text.secondary">
-              Submit again with existing AI responses:
-            </Typography>
-            <TextField
-              label="Count"
-              type="number"
-              value={resubmitCount}
-              onChange={(e) => onResubmitCountChange(Math.min(1000, Math.max(1, parseInt(e.target.value, 10) || 1)))}
-              size="small"
-              slotProps={{ htmlInput: { min: 1, max: 1000 } }}
-              sx={{ width: 100 }}
-            />
-            <Button variant="outlined" onClick={onResubmit}>
-              Submit Again
+        {/* Done */}
+        {isDone && (
+          <Alert severity="success">Pipeline complete — all responses submitted successfully.</Alert>
+        )}
+
+        {/* Error */}
+        {isError && <Alert severity="error">{error ?? 'An unexpected error occurred.'}</Alert>}
+
+        {/* Controls */}
+        {!isIdle && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Button
+              variant="outlined"
+              onClick={() => setReviewOpen(true)}
+              disabled={Object.keys(results).length === 0}
+            >
+              Review Details
+            </Button>
+            <Button variant="outlined" color="error" onClick={onReset} disabled={busy}>
+              Start over
             </Button>
           </Box>
         )}
-
-        {/* Error state */}
-        {isError && (
-          <Alert severity="error">
-            {error ?? 'An unexpected error occurred.'}
-          </Alert>
-        )}
       </Paper>
 
-      {/* Review Details dialog */}
-      <Dialog
-        open={reviewOpen}
-        onClose={() => setReviewOpen(false)}
-        maxWidth="md"
-        fullWidth
-        scroll="paper"
-      >
+      {/* Raw JSON dialog */}
+      <Dialog open={reviewOpen} onClose={() => setReviewOpen(false)} maxWidth="md" fullWidth scroll="paper">
         <DialogTitle>Step Details</DialogTitle>
         <DialogContent dividers>
           {Object.keys(results).length === 0 ? (

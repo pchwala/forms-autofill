@@ -90,9 +90,11 @@ export default function PipelineProgress({ steps }: Props) {
         {steps.map((step, i) => (
           <Step key={i} completed={step.status === 'done'}>
             <StepLabel
-              StepIconComponent={(iconProps) => (
-                <PipelineStepIcon {...iconProps} stepStatus={step.status} />
-              )}
+              slots={{
+                stepIcon: (iconProps: StepIconProps) => (
+                  <PipelineStepIcon {...iconProps} stepStatus={step.status} />
+                ),
+              }}
               sx={{
                 '& .MuiStepLabel-label': {
                   fontSize: '0.75rem',

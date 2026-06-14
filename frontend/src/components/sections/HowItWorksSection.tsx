@@ -18,23 +18,23 @@ const HOW_IT_WORKS: HowItWorksItem[] = [
   {
     icon: <LinkIcon sx={{ fontSize: 26, color: '#1976d2' }} />,
     step: '01',
-    title: 'Paste your Google Form URL',
+    title: 'Paste your form & desired outcome',
     description:
-      'Drop in any publicly accessible Google Form link. The AI fetches and analyzes the form structure automatically.',
+      'Drop in any public Google Form link and optionally describe the outcome you want. The AI fetches the form and builds a response strategy — for free.',
   },
   {
     icon: <SmartToyIcon sx={{ fontSize: 26, color: '#9c27b0' }} />,
     step: '02',
-    title: 'AI generates realistic responses',
+    title: 'Review the predicted results',
     description:
-      'The AI analyzes each question and produces diverse, human-like answers at scale — no templates, no repetition.',
+      'See the respondent personas and the predicted answer distributions before anything is sent. Pick which personas to include and watch the results update live.',
   },
   {
     icon: <SendIcon sx={{ fontSize: 26, color: '#4caf50' }} />,
     step: '03',
-    title: 'Responses are auto-submitted',
+    title: 'Unlock & submit',
     description:
-      'All generated responses are shuffled and submitted directly to Google Forms on your behalf.',
+      'Happy with the preview? Unlock submission to generate and auto-submit the shuffled responses directly to your Google Form.',
   },
 ];
 

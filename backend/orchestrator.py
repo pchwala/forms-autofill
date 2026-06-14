@@ -37,31 +37,31 @@ def step2_strategy(
     config_path: pathlib.Path,
     emit: Emit,
     pipeline_id: str | None = None,
+    desire_prompt: str | None = None,
 ) -> pathlib.Path:
     emit({"type": "step", "step": 2, "status": "start", "message": "Generating strategy (3 GPT steps)"})
-    strategy_path = sg_module.run(config_path=config_path, emit=emit)
+    strategy_path = sg_module.run(config_path=config_path, emit=emit, desire_prompt=desire_prompt)
     strategy_data = json.loads(strategy_path.read_text(encoding="utf-8"))
     emit({"type": "result", "key": "strategy", "data": strategy_data})
     emit({"type": "step", "step": 2, "status": "done", "message": f"Strategy saved."})
-    if pipeline_id is not None:
-        base_name = config_path.name[: -len("_form_config.json")]
-        data_dir = config_path.parent
-        for step_key, suffix in [
-            ("research_basis", "_research_basis.json"),
-            ("research_analysis", "_research_analysis.json"),
-            ("strategy", "_strategy.json"),
-        ]:
-            fp = data_dir / f"{base_name}{suffix}"
-            if fp.exists():
-                firestore_service.save_pipeline_step(
-                    pipeline_id, step_key, json.loads(fp.read_text(encoding="utf-8"))
-                )
+    base_name = config_path.name[: -len("_form_config.json")]
+    data_dir = config_path.parent
+    for step_key, suffix in [
+        ("research_basis", "_research_basis.json"),
+        ("research_analysis", "_research_analysis.json"),
+        ("strategy", "_strategy.json"),
+    ]:
+        fp = data_dir / f"{base_name}{suffix}"
+        if fp.exists():
+            firestore_service.save_pipeline_step(
+                pipeline_id, step_key, json.loads(fp.read_text(encoding="utf-8"))
+            )
     return strategy_path
 
 
 def step3_generate(
-    config_path: pathlib.Path,
-    strategy_path: pathlib.Path,
+    form_config: dict,
+    strategy: dict,
     total_responses: int,
     emit: Emit,
     pipeline_id: str | None = None,
@@ -69,10 +69,8 @@ def step3_generate(
     ai_count = min(total_responses, MAX_AI_RESPONSES)
     suffix = f" (reused in batches for {total_responses} total)" if total_responses > ai_count else ""
     emit({"type": "step", "step": 3, "status": "start", "message": f"Generating {ai_count} AI responses{suffix}"})
-    config = json.loads(config_path.read_text(encoding="utf-8"))
-    config["strategy_file"] = str(strategy_path)
-    config["total_responses"] = ai_count
-    responses = ResponseGenerator(config).generate(emit=emit)
+    config = {**form_config, "total_responses": ai_count}
+    responses = ResponseGenerator(config).generate(emit=emit, strategy=strategy)
     emit({"type": "result", "key": "responses", "data": responses})
     emit({"type": "step", "step": 3, "status": "done", "message": f"Generated {len(responses)} AI responses{suffix}"})
     firestore_service.save_pipeline_step(pipeline_id, "responses", responses)
@@ -91,11 +89,16 @@ def step4_shuffle(
 
 
 def step5_submit(
-    config_path: pathlib.Path,
+    form_config: dict,
     responses: list[dict],
     total_responses: int,
     emit: Emit,
-) -> None:
+) -> int:
+    """Submit responses (looping in batches when total_responses exceeds the unique count).
+
+    Returns the number of responses that were confirmed as submitted — this is what the
+    user is charged for (1 credit per confirmed submission).
+    """
     total_batches = math.ceil(total_responses / len(responses))
     emit({
         "type": "step",
@@ -103,9 +106,9 @@ def step5_submit(
         "status": "start",
         "message": f"Submitting {total_responses} responses in {total_batches} batch(es)",
     })
-    config = json.loads(config_path.read_text(encoding="utf-8"))
-    filler = FormFiller(config)
+    filler = FormFiller(form_config)
     submitted = 0
+    succeeded = 0
     current_responses = list(responses)
 
     for batch in range(1, total_batches + 1):
@@ -127,39 +130,12 @@ def step5_submit(
             else:
                 emit(event)
 
-        filler.submit_range(current_responses, 0, batch_size, emit=_batch_emit)
+        succeeded += filler.submit_range(current_responses, 0, batch_size, emit=_batch_emit)
         submitted += batch_size
 
         if submitted < total_responses:
             # Shuffle for the next batch
             random.shuffle(current_responses)
 
-    emit({"type": "step", "step": 5, "status": "done", "message": f"All {submitted} responses submitted"})
-
-
-def run_pipeline(
-    form_url: str,
-    total_responses: int,
-    emit: Emit,
-    uid: str | None = None,
-) -> tuple[pathlib.Path, list[dict]]:
-    data_dir = pathlib.Path("data")
-    data_dir.mkdir(exist_ok=True)
-    pipeline_id: str | None = None
-    try:
-        config_path, base_name = step1_extract(form_url, data_dir, emit)
-        config_data = json.loads(config_path.read_text(encoding="utf-8"))
-        form_title = config_data.get("form_title", "")
-        pipeline_id = firestore_service.create_pipeline(uid, form_url, form_title, total_responses, base_name)
-        firestore_service.save_pipeline_step(pipeline_id, "form_config", config_data)
-
-        strategy_path = step2_strategy(config_path, emit, pipeline_id=pipeline_id)
-        responses = step3_generate(config_path, strategy_path, total_responses, emit, pipeline_id=pipeline_id)
-        shuffled = step4_shuffle(responses, emit)
-        step5_submit(config_path, shuffled, total_responses, emit)
-        firestore_service.complete_pipeline(pipeline_id)
-    except Exception as exc:
-        firestore_service.fail_pipeline(pipeline_id, str(exc))
-        raise
-
-    return config_path, shuffled
+    emit({"type": "step", "step": 5, "status": "done", "message": f"{succeeded}/{submitted} responses submitted"})
+    return succeeded

@@ -9,32 +9,48 @@ import uuid
 from typing import AsyncGenerator, Callable
 
 import firebase_admin
+import stripe
 from firebase_admin import auth as firebase_auth, credentials, firestore as fb_firestore
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 
 from .firestore_service import (
-    can_run_pipeline,
+    add_credits,
     complete_pipeline,
-    consume_free_use,
+    consume_credits,
     create_pipeline,
     fail_pipeline,
+    get_credits,
     get_or_create_user,
     get_pipeline,
     get_user_pipelines,
     get_user_status,
     save_pipeline_step,
+    update_pipeline,
 )
 from .orchestrator import (
-    run_pipeline,
     step1_extract,
     step2_strategy,
     step3_generate,
     step4_shuffle,
     step5_submit,
 )
+from .preview import compute_preview, filter_and_renormalize_personas
+
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
+_STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+_APP_URL = os.getenv(
+    "APP_URL",
+    os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")[0].strip(),
+)
+
+PACKS: dict[str, dict] = {
+    "small":  {"credits": 20,  "usd": 99,   "pln": 499},
+    "medium": {"credits": 100, "usd": 425,  "pln": 2125},
+    "large":  {"credits": 200, "usd": 750,  "pln": 3750},
+}
 
 app = FastAPI(title="Forms Autofill API")
 
@@ -52,8 +68,14 @@ def _load_firebase_credentials() -> credentials.Base:
         raise ValueError("FIREBASE_CREDENTIALS_JSON is required")
 
     # Accept either a file path or raw JSON content in the env var.
-    if pathlib.Path(creds_env).is_file():
-        return credentials.Certificate(creds_env)
+    # A relative path is resolved both against the current working directory and
+    # against this package directory (uvicorn is typically launched from the repo
+    # root, while the credentials file lives next to this module in backend/).
+    candidate = pathlib.Path(creds_env)
+    if not candidate.is_file():
+        candidate = pathlib.Path(__file__).resolve().parent / creds_env
+    if candidate.is_file():
+        return credentials.Certificate(str(candidate))
 
     try:
         creds_data = json.loads(creds_env)
@@ -65,20 +87,41 @@ def _load_firebase_credentials() -> credentials.Base:
     return credentials.Certificate(creds_data)
 
 
-AUTH_DISABLED = os.getenv("AUTH_DISABLED", "false").lower() == "true"
+_cred = _load_firebase_credentials()
+firebase_admin.initialize_app(_cred)
+fb_firestore.client()  # Validate Firestore connection at startup
 
-if not AUTH_DISABLED:
-    _cred = _load_firebase_credentials()
-    firebase_admin.initialize_app(_cred)
-    fb_firestore.client()  # Validate Firestore connection at startup
-
+# _jobs holds the SSE queue for a *live* run only. It is intentionally in-memory: a dead
+# process means a dead run, and credits are charged after submission (so no money rides on
+# it). It is never the source of truth for pipeline state.
 _jobs: dict[str, dict] = {}
-_sessions: dict[str, dict] = {}
+
+
+def _load_pipeline_record(pipeline_id: str, uid: str) -> dict | None:
+    """Return the persisted pipeline record needed to run a submit, or None if unavailable.
+
+    Shape: {uid, base_name, form_config, strategy, preview, status}, read from Firestore.
+    Returns None when the record is missing, not owned by the caller, or the
+    form_config/strategy haven't been persisted yet (preview not ready).
+    """
+    doc = get_pipeline(pipeline_id, uid)
+    if doc is None:
+        return None
+    form_config = doc.get("step_form_config")
+    strategy = doc.get("step_strategy")
+    if form_config is None or strategy is None:
+        return None
+    return {
+        "uid": doc.get("user_uid"),
+        "base_name": doc.get("base_name"),
+        "form_config": form_config,
+        "strategy": strategy,
+        "preview": doc.get("preview"),
+        "status": doc.get("status"),
+    }
 
 
 def _verify(authorization: str | None) -> dict[str, str]:
-    if AUTH_DISABLED:
-        return {"uid": "dev", "email": "dev@local"}
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing Bearer token")
     token = authorization[len("Bearer "):]
@@ -92,206 +135,12 @@ def _verify(authorization: str | None) -> dict[str, str]:
 def _make_job(loop: asyncio.AbstractEventLoop) -> tuple[str, asyncio.Queue, Callable[[dict], None]]:
     job_id = str(uuid.uuid4())
     queue: asyncio.Queue = asyncio.Queue()
-    _jobs[job_id] = {"status": "running", "queue": queue, "result": None}
+    _jobs[job_id] = {"queue": queue}
 
     def emit(event: dict) -> None:
         loop.call_soon_threadsafe(queue.put_nowait, event)
 
     return job_id, queue, emit
-
-
-class RunRequest(BaseModel):
-    form_url: str
-    total_responses: int = 100
-
-    @field_validator("total_responses")
-    @classmethod
-    def _validate_total(cls, v: int) -> int:
-        if not (1 <= v <= 1000):
-            raise ValueError("total_responses must be between 1 and 1000")
-        return v
-
-
-class SessionRequest(BaseModel):
-    form_url: str
-    total_responses: int = 100
-
-    @field_validator("total_responses")
-    @classmethod
-    def _validate_total(cls, v: int) -> int:
-        if not (1 <= v <= 1000):
-            raise ValueError("total_responses must be between 1 and 1000")
-        return v
-
-
-class ResubmitRequest(BaseModel):
-    result_id: str
-    total_responses: int
-
-    @field_validator("total_responses")
-    @classmethod
-    def _validate_total(cls, v: int) -> int:
-        if not (1 <= v <= 1000):
-            raise ValueError("total_responses must be between 1 and 1000")
-        return v
-
-
-class ResubmitSessionRequest(BaseModel):
-    total_responses: int
-
-    @field_validator("total_responses")
-    @classmethod
-    def _validate_total(cls, v: int) -> int:
-        if not (1 <= v <= 1000):
-            raise ValueError("total_responses must be between 1 and 1000")
-        return v
-
-
-class ResubmitHistoryRequest(BaseModel):
-    total_responses: int
-
-    @field_validator("total_responses")
-    @classmethod
-    def _validate_total(cls, v: int) -> int:
-        if not (1 <= v <= 1000):
-            raise ValueError("total_responses must be between 1 and 1000")
-        return v
-
-
-@app.post("/run")
-async def run(req: RunRequest, authorization: str | None = Header(default=None)):
-    user = _verify(authorization)
-    uid, email = user["uid"], user["email"]
-    if not AUTH_DISABLED:
-        get_or_create_user(uid, email)
-        if not can_run_pipeline(uid):
-            raise HTTPException(status_code=402, detail="Free run already used; payment required")
-        consume_free_use(uid)
-    loop = asyncio.get_running_loop()
-    job_id, _, emit = _make_job(loop)
-
-    def worker() -> None:
-        try:
-            uid_for_pipeline = None if AUTH_DISABLED else uid
-            config_path, responses = run_pipeline(req.form_url, req.total_responses, emit, uid=uid_for_pipeline)
-            _jobs[job_id]["status"] = "done"
-            _jobs[job_id]["result"] = responses
-            _jobs[job_id]["config_path"] = config_path
-            emit({"type": "done", "total": len(responses), "result_id": job_id})
-        except Exception as exc:
-            _jobs[job_id]["status"] = "error"
-            _jobs[job_id]["error"] = str(exc)
-            emit({"type": "error", "message": str(exc)})
-
-    threading.Thread(target=worker, daemon=True).start()
-    return {"job_id": job_id}
-
-
-@app.post("/session")
-async def create_session(req: SessionRequest, authorization: str | None = Header(default=None)):
-    user = _verify(authorization)
-    uid, email = user["uid"], user["email"]
-    if not AUTH_DISABLED:
-        get_or_create_user(uid, email)
-        if not can_run_pipeline(uid):
-            raise HTTPException(status_code=402, detail="Free run already used; payment required")
-        consume_free_use(uid)
-    session_id = str(uuid.uuid4())
-    _sessions[session_id] = {
-        "form_url": req.form_url,
-        "total_responses": req.total_responses,
-        "current_step": 0,
-        "status": "idle",
-        "config_path": None,
-        "strategy_path": None,
-        "responses": None,
-        "base_name": None,
-        "pipeline_id": None,
-    }
-    return {"session_id": session_id}
-
-
-@app.get("/session/{session_id}")
-async def get_session(session_id: str, authorization: str | None = Header(default=None)):
-    user = _verify(authorization)
-    if session_id not in _sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    s = _sessions[session_id]
-    return {
-        "session_id": session_id,
-        "current_step": s["current_step"],
-        "status": s["status"],
-        "total_steps": 5,
-    }
-
-
-@app.post("/session/{session_id}/advance")
-async def advance_session(session_id: str, authorization: str | None = Header(default=None)):
-    user = _verify(authorization)
-    if session_id not in _sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    s = _sessions[session_id]
-    if s["status"] == "running":
-        raise HTTPException(status_code=409, detail="Step already running")
-    if s["current_step"] >= 5:
-        raise HTTPException(status_code=409, detail="Pipeline already complete")
-
-    next_step = s["current_step"] + 1
-    s["status"] = "running"
-
-    loop = asyncio.get_running_loop()
-    job_id, _, emit = _make_job(loop)
-
-    def worker() -> None:
-        try:
-            data_dir = pathlib.Path("data")
-            data_dir.mkdir(exist_ok=True)
-            result = None
-
-            if next_step == 1:
-                config_path, base_name = step1_extract(s["form_url"], data_dir, emit)
-                s["config_path"] = config_path
-                s["base_name"] = base_name
-                config_data = json.loads(config_path.read_text(encoding="utf-8"))
-                form_title = config_data.get("form_title", "")
-                uid_for_pipeline = None if AUTH_DISABLED else user["uid"]
-                pipeline_id = create_pipeline(uid_for_pipeline, s["form_url"], form_title, s["total_responses"], base_name)
-                s["pipeline_id"] = pipeline_id
-                save_pipeline_step(pipeline_id, "form_config", config_data)
-                result = config_path
-            elif next_step == 2:
-                result = step2_strategy(s["config_path"], emit, pipeline_id=s["pipeline_id"])
-                s["strategy_path"] = result
-            elif next_step == 3:
-                result = step3_generate(
-                    s["config_path"], s["strategy_path"], s["total_responses"], emit,
-                    pipeline_id=s["pipeline_id"],
-                )
-                s["responses"] = result
-            elif next_step == 4:
-                result = step4_shuffle(s["responses"], emit)
-                s["responses"] = result
-            elif next_step == 5:
-                step5_submit(s["config_path"], s["responses"], s["total_responses"], emit)
-                complete_pipeline(s["pipeline_id"])
-                result = s["responses"]
-
-            s["current_step"] = next_step
-            s["status"] = "completed" if next_step == 5 else "idle"
-            _jobs[job_id]["status"] = "done"
-            _jobs[job_id]["result"] = result if next_step == 5 else None
-            emit({"type": "step_complete", "step": next_step})
-            if next_step == 5:
-                emit({"type": "done", "total": len(s["responses"]), "session_id": session_id})
-        except Exception as exc:
-            s["status"] = "error"
-            fail_pipeline(s.get("pipeline_id"), str(exc))
-            _jobs[job_id]["status"] = "error"
-            _jobs[job_id]["error"] = str(exc)
-            emit({"type": "error", "message": str(exc)})
-
-    threading.Thread(target=worker, daemon=True).start()
-    return {"job_id": job_id, "step": next_step}
 
 
 @app.get("/stream/{job_id}")
@@ -302,103 +151,26 @@ async def stream(job_id: str, authorization: str | None = Header(default=None)):
 
     async def generator() -> AsyncGenerator[str, None]:
         q = _jobs[job_id]["queue"]
-        while True:
-            try:
-                event = await asyncio.wait_for(q.get(), timeout=30)
-            except asyncio.TimeoutError:
-                yield 'data: {"type":"ping"}\n\n'
-                continue
-            yield f"data: {json.dumps(event)}\n\n"
-            if event.get("type") in ("done", "error", "step_complete"):
-                break
-        # Do NOT pop the job — it may be needed for resubmit
+        try:
+            while True:
+                try:
+                    event = await asyncio.wait_for(q.get(), timeout=30)
+                except asyncio.TimeoutError:
+                    yield 'data: {"type":"ping"}\n\n'
+                    continue
+                yield f"data: {json.dumps(event)}\n\n"
+                if event.get("type") in ("done", "error", "step_complete"):
+                    break
+        finally:
+            # Each job is streamed exactly once; drop it so _jobs doesn't grow unbounded.
+            _jobs.pop(job_id, None)
 
     return StreamingResponse(generator(), media_type="text/event-stream")
-
-
-@app.get("/result/{job_id}")
-async def result(job_id: str, authorization: str | None = Header(default=None)):
-    user = _verify(authorization)
-    if job_id not in _jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
-    job = _jobs[job_id]
-    if job["status"] == "running":
-        return {"status": "running"}
-    if job["status"] == "error":
-        return {"status": "error", "error": job.get("error", "unknown")}
-    return {"status": "done", "total": len(job["result"]), "responses": job["result"]}
-
-
-@app.post("/resubmit")
-async def resubmit(req: ResubmitRequest, authorization: str | None = Header(default=None)):
-    user = _verify(authorization)
-    if not AUTH_DISABLED:
-        get_or_create_user(user["uid"], user["email"])
-    job = _jobs.get(req.result_id)
-    if job is None or job["status"] != "done":
-        raise HTTPException(status_code=404, detail="Result not found or pipeline not complete")
-
-    config_path: pathlib.Path = job["config_path"]
-    responses: list[dict] = job["result"]
-
-    loop = asyncio.get_running_loop()
-    new_job_id, _, emit = _make_job(loop)
-
-    def worker() -> None:
-        try:
-            shuffled = step4_shuffle(responses, emit)
-            step5_submit(config_path, shuffled, req.total_responses, emit)
-            _jobs[new_job_id]["status"] = "done"
-            _jobs[new_job_id]["result"] = shuffled
-            _jobs[new_job_id]["config_path"] = config_path
-            emit({"type": "done", "total": req.total_responses, "result_id": new_job_id})
-        except Exception as exc:
-            _jobs[new_job_id]["status"] = "error"
-            _jobs[new_job_id]["error"] = str(exc)
-            emit({"type": "error", "message": str(exc)})
-
-    threading.Thread(target=worker, daemon=True).start()
-    return {"job_id": new_job_id}
-
-
-@app.post("/session/{session_id}/resubmit")
-async def resubmit_session(session_id: str, req: ResubmitSessionRequest, authorization: str | None = Header(default=None)):
-    user = _verify(authorization)
-    if not AUTH_DISABLED:
-        get_or_create_user(user["uid"], user["email"])
-    if session_id not in _sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    s = _sessions[session_id]
-    if s["status"] != "completed":
-        raise HTTPException(status_code=409, detail="Pipeline not complete; cannot resubmit")
-
-    config_path: pathlib.Path = s["config_path"]
-    responses: list[dict] = s["responses"]
-
-    loop = asyncio.get_running_loop()
-    job_id, _, emit = _make_job(loop)
-
-    def worker() -> None:
-        try:
-            shuffled = step4_shuffle(responses, emit)
-            step5_submit(config_path, shuffled, req.total_responses, emit)
-            _jobs[job_id]["status"] = "done"
-            _jobs[job_id]["result"] = shuffled
-            emit({"type": "done", "total": req.total_responses, "session_id": session_id})
-        except Exception as exc:
-            _jobs[job_id]["status"] = "error"
-            _jobs[job_id]["error"] = str(exc)
-            emit({"type": "error", "message": str(exc)})
-
-    threading.Thread(target=worker, daemon=True).start()
-    return {"job_id": job_id}
 
 
 @app.get("/history")
 async def get_history(authorization: str | None = Header(default=None)):
     user = _verify(authorization)
-    if AUTH_DISABLED:
-        return []
     try:
         pipelines = get_user_pipelines(user["uid"])
     except Exception as exc:
@@ -411,69 +183,278 @@ async def get_history(authorization: str | None = Header(default=None)):
     return pipelines
 
 
-@app.get("/history/{pipeline_id}")
-async def get_history_detail(pipeline_id: str, authorization: str | None = Header(default=None)):
+@app.get("/user/status")
+async def user_status(authorization: str | None = Header(default=None)):
     user = _verify(authorization)
-    if AUTH_DISABLED:
-        raise HTTPException(status_code=404, detail="History not available in dev mode")
-    doc = get_pipeline(pipeline_id, user["uid"])
-    if doc is None:
-        raise HTTPException(status_code=404, detail="Pipeline not found")
-    for key in ("created_at", "completed_at"):
-        val = doc.get(key)
-        if val is not None and hasattr(val, "isoformat"):
-            doc[key] = val.isoformat()
-    return doc
+    return get_user_status(user["uid"])
 
 
-@app.post("/history/{pipeline_id}/resubmit")
-async def resubmit_history(
-    pipeline_id: str,
-    req: ResubmitHistoryRequest,
-    authorization: str | None = Header(default=None),
-):
+# ---------------------------------------------------------------------------
+# Preview → paywall → submit flow
+# ---------------------------------------------------------------------------
+
+
+class PreviewRequest(BaseModel):
+    form_url: str
+    total_responses: int = 100
+    desire_prompt: str | None = None
+
+    @field_validator("total_responses")
+    @classmethod
+    def _validate_total(cls, v: int) -> int:
+        if not (1 <= v <= 1000):
+            raise ValueError("total_responses must be between 1 and 1000")
+        return v
+
+
+class SubmitRequest(BaseModel):
+    selected_persona_codes: list[str]
+    total_responses: int
+
+    @field_validator("total_responses")
+    @classmethod
+    def _validate_total(cls, v: int) -> int:
+        if not (1 <= v <= 1000):
+            raise ValueError("total_responses must be between 1 and 1000")
+        return v
+
+    @field_validator("selected_persona_codes")
+    @classmethod
+    def _validate_codes(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("At least one persona must be selected")
+        return v
+
+
+@app.post("/preview")
+async def preview(req: PreviewRequest, authorization: str | None = Header(default=None)):
+    """Free phase: extract the form + generate a strategy, then return the predicted
+    persona mix and answer distributions. No credit is consumed."""
     user = _verify(authorization)
-    if AUTH_DISABLED:
-        raise HTTPException(status_code=404, detail="History not available in dev mode")
-    doc = get_pipeline(pipeline_id, user["uid"])
-    if doc is None:
-        raise HTTPException(status_code=404, detail="Pipeline not found")
+    uid, email = user["uid"], user["email"]
+    get_or_create_user(uid, email)
 
-    config_data = doc.get("step_form_config")
-    responses = doc.get("step_responses")
-    if not config_data or not responses:
-        raise HTTPException(status_code=409, detail="Pipeline data incomplete for resubmit")
-
-    base_name = doc.get("base_name", "")
-    config_path = pathlib.Path("data") / f"{base_name}_form_config.json"
-    if not config_path.exists():
-        config_path.parent.mkdir(exist_ok=True)
-        config_path.write_text(json.dumps(config_data), encoding="utf-8")
+    # One id end-to-end: the Firestore doc id == the id the client holds.
+    pipeline_id = str(uuid.uuid4())
 
     loop = asyncio.get_running_loop()
     job_id, _, emit = _make_job(loop)
 
     def worker() -> None:
         try:
-            shuffled = step4_shuffle(responses, emit)
-            step5_submit(config_path, shuffled, req.total_responses, emit)
-            _jobs[job_id]["status"] = "done"
-            _jobs[job_id]["result"] = shuffled
-            _jobs[job_id]["config_path"] = config_path
-            emit({"type": "done", "total": req.total_responses, "result_id": job_id})
+            data_dir = pathlib.Path("data")
+            data_dir.mkdir(exist_ok=True)
+
+            config_path, base_name = step1_extract(req.form_url, data_dir, emit)
+            config_data = json.loads(config_path.read_text(encoding="utf-8"))
+            form_title = config_data.get("form_title", "")
+
+            create_pipeline(
+                pipeline_id, uid, req.form_url, form_title, req.total_responses, base_name,
+                desire_prompt=req.desire_prompt,
+            )
+            save_pipeline_step(pipeline_id, "form_config", config_data)
+
+            strategy_path = step2_strategy(
+                config_path, emit, pipeline_id=pipeline_id, desire_prompt=req.desire_prompt
+            )
+            strategy_data = json.loads(strategy_path.read_text(encoding="utf-8"))
+            preview_data = compute_preview(strategy_data, config_data)
+
+            update_pipeline(pipeline_id, {"status": "preview_ready", "preview": preview_data})
+
+            emit({"type": "result", "key": "preview", "data": preview_data})
+            emit({"type": "done", "pipeline_id": pipeline_id})
         except Exception as exc:
-            _jobs[job_id]["status"] = "error"
-            _jobs[job_id]["error"] = str(exc)
+            fail_pipeline(pipeline_id, str(exc))
+            emit({"type": "error", "message": str(exc)})
+
+    threading.Thread(target=worker, daemon=True).start()
+    return {"job_id": job_id, "pipeline_id": pipeline_id}
+
+
+@app.post("/pipelines/{pipeline_id}/submit")
+async def submit_pipeline(
+    pipeline_id: str,
+    req: SubmitRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Paid phase: generate + shuffle + submit responses for the selected personas, then
+    charge 1 credit per confirmed submission. Returns 402 when the balance can't cover the
+    requested response count. Credits are deducted *after* submission, so nothing is consumed
+    (and nothing needs refunding) if the run fails."""
+    user = _verify(authorization)
+    uid = user["uid"]
+
+    record = _load_pipeline_record(pipeline_id, uid)
+    if record is None or record.get("status") == "in_progress":
+        raise HTTPException(status_code=404, detail="Pipeline not found or not ready")
+
+    # 1 credit = 1 submitted response. Require enough balance up front; the actual charge
+    # (successful submissions only) is applied by the worker once the run completes.
+    if get_credits(uid) < req.total_responses:
+        raise HTTPException(status_code=402, detail="Insufficient credits; payment required")
+
+    form_config = record["form_config"]
+
+    try:
+        filtered = filter_and_renormalize_personas(record["strategy"], req.selected_persona_codes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    update_pipeline(
+        pipeline_id,
+        {"status": "submitting", "selected_persona_codes": req.selected_persona_codes},
+    )
+
+    loop = asyncio.get_running_loop()
+    job_id, _, emit = _make_job(loop)
+
+    def worker() -> None:
+        try:
+            responses = step3_generate(
+                form_config, filtered, req.total_responses, emit, pipeline_id=pipeline_id
+            )
+            shuffled = step4_shuffle(responses, emit)
+            succeeded = step5_submit(form_config, shuffled, req.total_responses, emit)
+            consume_credits(uid, succeeded)  # charge only confirmed submissions
+            complete_pipeline(pipeline_id)
+            emit({"type": "done", "total": succeeded, "pipeline_id": pipeline_id})
+        except Exception as exc:
+            # Nothing was charged; leave the record resubmittable.
+            fail_pipeline(pipeline_id, str(exc))
             emit({"type": "error", "message": str(exc)})
 
     threading.Thread(target=worker, daemon=True).start()
     return {"job_id": job_id}
 
 
-
-@app.get("/user/status")
-async def user_status(authorization: str | None = Header(default=None)):
+@app.get("/pipelines/{pipeline_id}")
+async def get_pipeline_status(
+    pipeline_id: str, authorization: str | None = Header(default=None)
+):
+    """Restore a pipeline's preview/status from the authoritative store (used by the frontend
+    after a reload or the Stripe redirect, so nothing is re-run)."""
     user = _verify(authorization)
-    if AUTH_DISABLED:
-        return {"free_used": False, "paid": False}
-    return get_user_status(user["uid"])
+    uid = user["uid"]
+    doc = get_pipeline(pipeline_id, uid)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+    return {
+        "status": doc.get("status"),
+        "preview": doc.get("preview"),
+        "total_responses": doc.get("total_responses"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Billing — Stripe Checkout
+# ---------------------------------------------------------------------------
+
+
+async def _fulfill_checkout(session: dict) -> None:
+    """Grant credits for a completed Stripe Checkout session (idempotent)."""
+    uid = session["metadata"]["uid"]
+    credits = int(session["metadata"]["credits"])
+    add_credits(uid, credits, idempotency_key=session["id"])
+
+
+@app.get("/billing/packs")
+async def billing_packs():
+    """Return available credit packs (no auth required)."""
+    return PACKS
+
+
+class CheckoutRequest(BaseModel):
+    pack: str
+    currency: str
+    quantity: int = 1
+
+
+@app.post("/billing/checkout")
+async def billing_checkout(
+    req: CheckoutRequest, authorization: str | None = Header(default=None)
+):
+    """Create a Stripe Checkout Session and return its URL."""
+    user = _verify(authorization)
+    uid = user["uid"]
+
+    if req.pack not in PACKS:
+        raise HTTPException(status_code=400, detail=f"Unknown pack: {req.pack}")
+    if req.currency not in ("usd", "pln"):
+        raise HTTPException(status_code=400, detail="currency must be 'usd' or 'pln'")
+    if req.quantity < 1:
+        raise HTTPException(status_code=400, detail="quantity must be at least 1")
+
+    pack = PACKS[req.pack]
+    total_credits = pack["credits"] * req.quantity
+    product_name = f"{pack['credits']} credits"
+
+    try:
+        session = stripe.checkout.Session.create(
+            mode="payment",
+            line_items=[
+                {
+                    "price_data": {
+                        "currency": req.currency,
+                        "unit_amount": pack[req.currency],
+                        "product_data": {"name": product_name},
+                    },
+                    "quantity": req.quantity,
+                }
+            ],
+            metadata={"uid": uid, "credits": str(total_credits)},
+            success_url=f"{_APP_URL}/?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{_APP_URL}/?checkout=cancel",
+        )
+    except stripe.StripeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {"url": session.url}
+
+
+@app.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    """Stripe webhook endpoint — verifies signature and fulfills completed checkouts."""
+    body = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+
+    try:
+        event = stripe.Webhook.construct_event(body, sig_header, _STRIPE_WEBHOOK_SECRET)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid payload")
+    except stripe.errors.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    if event["type"] == "checkout.session.completed":
+        await _fulfill_checkout(event["data"]["object"])
+
+    return {"ok": True}
+
+
+class ConfirmRequest(BaseModel):
+    session_id: str
+
+
+@app.post("/billing/confirm")
+async def billing_confirm(
+    req: ConfirmRequest, authorization: str | None = Header(default=None)
+):
+    """On-return fallback: confirm a Stripe session and grant credits if paid.
+
+    Called by the frontend when returning from Stripe Checkout, so fulfillment
+    doesn't depend on the webhook arriving first. Idempotent — safe to call even
+    if the webhook already ran.
+    """
+    user = _verify(authorization)
+    uid = user["uid"]
+
+    try:
+        session = stripe.checkout.Session.retrieve(req.session_id)
+    except stripe.StripeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    if session.get("payment_status") == "paid" and session.get("metadata", {}).get("uid") == uid:
+        await _fulfill_checkout(session)
+
+    return {"credits": get_credits(uid)}

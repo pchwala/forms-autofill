@@ -32,7 +32,8 @@ npm run preview  # serve the dist/ build locally
 
 ```bash
 docker build -t forms-autofill-backend ./backend
-docker run -p 8000:8000 -e AUTH_DISABLED=true -e OPENAI_API_KEY=sk-... forms-autofill-backend
+docker run -p 8000:8000 -e OPENAI_API_KEY=sk-... \
+  -e FIREBASE_CREDENTIALS_JSON="$(cat backend/firebase_credentials.json)" forms-autofill-backend
 ```
 
 ## Environment Variables
@@ -41,20 +42,16 @@ docker run -p 8000:8000 -e AUTH_DISABLED=true -e OPENAI_API_KEY=sk-... forms-aut
 
 | Variable | Default | Notes |
 |---|---|---|
-| `AUTH_DISABLED` | `false` | Set `true` for local dev to skip Firebase |
 | `OPENAI_API_KEY` | — | Required for AI pipeline steps |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated |
-| `AI_SWITCH_STUB` | `false` | `true` replaces all AI calls with canned data + 10s delay |
-| `FIREBASE_CREDENTIALS_JSON` | — | File path or raw JSON; only needed when `AUTH_DISABLED=false` |
-| `KOFI_VERIFICATION_TOKEN` | — | Secures the Ko-fi payment webhook |
+| `FIREBASE_CREDENTIALS_JSON` | — | File path or raw JSON; required (auth is always enabled) |
 
 ### Frontend (`frontend/.env.development`)
 
 | Variable | Notes |
 |---|---|
 | `VITE_API_URL` | Backend URL, defaults to `http://localhost:8000` |
-| `VITE_AUTH_DISABLED` | `true` skips Firebase auth in the frontend |
-| `VITE_FIREBASE_*` | Firebase config — only needed when `VITE_AUTH_DISABLED=false` |
+| `VITE_FIREBASE_*` | Firebase config (required — auth is always enabled) |
 
 ## Architecture
 
@@ -77,13 +74,11 @@ In-memory state (`_jobs`, `_sessions`) is not persisted across restarts.
 4. `step4_shuffle` — `random.shuffle` in memory.
 5. `step5_submit` — posts each response set to the Google Form via `requests` (`new_filler.py`). Loops in batches if `total_responses > len(generated)`.
 
-**Auth** (`_verify` in `main.py`): verifies Firebase ID tokens from `Authorization: Bearer <token>`. When `AUTH_DISABLED=true`, all calls resolve to `{"uid": "dev", "email": "dev@local"}` and Firestore is never touched.
+**Auth** (`_verify` in `main.py`): verifies Firebase ID tokens from `Authorization: Bearer <token>`. Auth is always enabled (including local dev), so the backend requires `FIREBASE_CREDENTIALS_JSON` to start.
 
 **Payment gating** (`firestore_service.py`): each user gets one free pipeline run (`free_used` flag). Paid users (`paid=true`) are unlocked via a Ko-fi webhook (`POST /webhook/kofi`).
 
 **Firestore collections**: `users/{uid}`, `pipelines/{pipeline_id}` (stores per-step JSON output as `step_form_config`, `step_strategy`, `step_responses`, etc.).
-
-**Stub mode** (`stub.py`): when `AI_SWITCH_STUB=true`, every AI call returns minimal canned data after a 10-second sleep — useful for testing the full flow without spending API tokens.
 
 ### Frontend (`frontend/src/`)
 
@@ -94,7 +89,7 @@ Single-page React 19 app with Material UI (dark theme).
 - `steps`: array of `{ label, status }` for the stepper UI
 - Parses SSE events from `GET /stream/{jobId}` using a `fetch` + `ReadableStream` pattern (not the native `EventSource` API, because `EventSource` doesn't support custom headers).
 
-**Auth** — `useAuth` hook (`hooks/useAuth.ts`) wraps Firebase Auth Google Sign-In. When `VITE_AUTH_DISABLED=true`, `getToken()` returns an empty string and `AuthGuard` renders children unconditionally.
+**Auth** — `useAuth` hook (`hooks/useAuth.ts`) wraps Firebase Auth: every visitor gets an anonymous session (upgradeable to Google via `linkWithPopup`), and `AuthGuard` shows a spinner until the session resolves. Requires the `VITE_FIREBASE_*` config.
 
 **Key components**:
 - `PipelineSection` — the main control panel; receives all pipeline state and handlers as props from `App.tsx`.

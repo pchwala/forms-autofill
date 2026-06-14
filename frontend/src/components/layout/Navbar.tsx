@@ -1,18 +1,23 @@
 import AppBar from '@mui/material/AppBar';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
+import GoogleIcon from '@mui/icons-material/Google';
 import type { User } from 'firebase/auth';
-import { AUTH_DISABLED } from '../../firebase';
 import UserMenu from '../UserMenu';
 
 interface Props {
   user: User | null;
+  isAnonymous: boolean;
+  credits: number;
+  onSignIn: () => void;
   onSignOut: () => void;
   onHistory: () => void;
 }
 
-export default function Navbar({ user, onSignOut, onHistory }: Props) {
+export default function Navbar({ user, isAnonymous, credits, onSignIn, onSignOut, onHistory }: Props) {
+  const signedInWithGoogle = user && !isAnonymous;
   return (
     <AppBar
       position="sticky"
@@ -32,9 +37,21 @@ export default function Navbar({ user, onSignOut, onHistory }: Props) {
         >
           pchwala
         </Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          {!AUTH_DISABLED && user && (
-            <UserMenu user={user} onSignOut={onSignOut} onHistory={onHistory} />
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Typography variant="body2" color="text.secondary">
+            {credits} credit{credits === 1 ? '' : 's'}
+          </Typography>
+          {signedInWithGoogle ? (
+            <UserMenu user={user!} onSignOut={onSignOut} onHistory={onHistory} />
+          ) : (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<GoogleIcon />}
+              onClick={onSignIn}
+            >
+              Sign in
+            </Button>
           )}
         </Box>
       </Toolbar>
