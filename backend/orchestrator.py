@@ -29,7 +29,7 @@ def step1_extract(
         strategy_file="data/strategy.json",
         data_dir=data_dir,
     )
-    emit({"type": "step", "step": 1, "status": "done", "message": f"Form extracted."})
+    emit({"type": "step", "step": 1, "status": "done", "message": "Form extracted."})
     return config_path, base_name
 
 
@@ -43,7 +43,7 @@ def step2_strategy(
     strategy_path = sg_module.run(config_path=config_path, emit=emit, desire_prompt=desire_prompt)
     strategy_data = json.loads(strategy_path.read_text(encoding="utf-8"))
     emit({"type": "result", "key": "strategy", "data": strategy_data})
-    emit({"type": "step", "step": 2, "status": "done", "message": f"Strategy saved."})
+    emit({"type": "step", "step": 2, "status": "done", "message": "Strategy saved."})
     base_name = config_path.name[: -len("_form_config.json")]
     data_dir = config_path.parent
     for step_key, suffix in [

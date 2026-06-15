@@ -170,7 +170,8 @@ class ResponseGenerator:
             for i, rule in enumerate(strategy["correlation_rules"], 1):
                 lines.append(f'\n{i}. {rule.get("description", "")}')
                 for qid, vals in rule.get("if", {}).items():
-                    lines.append(f'   IF {qid} \u2208 {{"{chr(34) + chr(34).join(vals)}"}}' )
+                    lines.append(f'   IF {qid} \u2208 {{"{chr(34) + chr(34).join(vals)}"}}')
+
                 for qid, dist in rule.get("then", {}).items():
                     dist_str = ", ".join(f"{opt}: {pct}%" for opt, pct in dist.items())
                     lines.append(f"   THEN {qid} weights \u2192 {{{dist_str}}}")

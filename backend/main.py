@@ -145,7 +145,7 @@ def _make_job(loop: asyncio.AbstractEventLoop) -> tuple[str, asyncio.Queue, Call
 
 @app.get("/stream/{job_id}")
 async def stream(job_id: str, authorization: str | None = Header(default=None)):
-    user = _verify(authorization)
+    _verify(authorization)
     if job_id not in _jobs:
         raise HTTPException(status_code=404, detail="Job not found")
 
