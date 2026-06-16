@@ -344,6 +344,8 @@ async def get_pipeline_status(
         "status": doc.get("status"),
         "preview": doc.get("preview"),
         "total_responses": doc.get("total_responses"),
+        "form_title": doc.get("form_title"),
+        "selected_persona_codes": doc.get("selected_persona_codes"),
     }
 
 

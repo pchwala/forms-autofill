@@ -33,10 +33,12 @@ export default function App() {
     results,
     error,
     preview,
+    defaultSelectedCodes,
     submitProgress,
     startPreview,
     submitResponses,
     restore,
+    loadFromHistory,
     reset,
     setStatus,
   } = usePipeline(getToken);
@@ -123,6 +125,15 @@ export default function App() {
     }
   }
 
+  async function handleLoadFromHistory(pipelineId: string) {
+    try {
+      const restoredCount = await loadFromHistory(pipelineId);
+      setCount(restoredCount);
+    } catch {
+      // non-fatal — hook stays idle, user can start fresh
+    }
+  }
+
   function handlePaywallClose() {
     setPaywallOpen(false);
     setPendingCodes(null);
@@ -146,6 +157,9 @@ export default function App() {
             open={historyOpen}
             onClose={() => setHistoryOpen(false)}
             getToken={getToken}
+            credits={credits}
+            onResume={(id) => void handleLoadFromHistory(id)}
+            onResubmit={(id) => void handleLoadFromHistory(id)}
           />
           <PaywallDialog
             open={paywallOpen}
@@ -167,6 +181,7 @@ export default function App() {
               submitProgress={submitProgress}
               count={count}
               hasCredits={hasCredits}
+              defaultSelectedCodes={defaultSelectedCodes}
               onStart={handleStart}
               onSubmit={handleSubmit}
               onReset={reset}

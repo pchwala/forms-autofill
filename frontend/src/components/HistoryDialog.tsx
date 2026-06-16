@@ -20,7 +20,7 @@ export interface PipelineRecord {
   form_title: string;
   form_url: string;
   total_responses: number;
-  status: 'completed' | 'failed' | 'in_progress';
+  status: 'completed' | 'failed' | 'in_progress' | 'preview_ready' | 'submitting';
   created_at: string;
   completed_at: string | null;
 }
@@ -29,6 +29,9 @@ interface Props {
   open: boolean;
   onClose: () => void;
   getToken: () => Promise<string>;
+  credits: number;
+  onResume: (pipelineId: string) => void;
+  onResubmit: (pipelineId: string) => void;
 }
 
 function formatDate(iso: string): string {
@@ -36,13 +39,15 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-const STATUS_CHIP: Record<string, { label: string; color: 'success' | 'error' | 'warning' }> = {
-  completed: { label: 'Completed', color: 'success' },
-  failed: { label: 'Failed', color: 'error' },
-  in_progress: { label: 'In progress', color: 'warning' },
+const STATUS_CHIP: Record<string, { label: string; color: 'success' | 'error' | 'warning' | 'info' }> = {
+  completed:    { label: 'Completed',    color: 'success' },
+  failed:       { label: 'Failed',       color: 'error' },
+  in_progress:  { label: 'In progress',  color: 'warning' },
+  preview_ready:{ label: 'Preview ready',color: 'info' },
+  submitting:   { label: 'Submitting',   color: 'warning' },
 };
 
-export default function HistoryDialog({ open, onClose, getToken }: Props) {
+export default function HistoryDialog({ open, onClose, getToken, credits, onResume, onResubmit }: Props) {
   const [records, setRecords] = useState<PipelineRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,19 +102,44 @@ export default function HistoryDialog({ open, onClose, getToken }: Props) {
           <List disablePadding>
             {records.map((record, idx) => {
               const chip = STATUS_CHIP[record.status] ?? { label: record.status, color: 'warning' as const };
+              const canResume = record.status === 'preview_ready';
+              const canResubmit = record.status === 'completed';
+              const hasEnoughCredits = credits >= record.total_responses;
+
               return (
                 <ListItem
                   key={record.pipeline_id}
                   divider={idx < records.length - 1}
-                  secondaryAction={
-                    <Chip label={chip.label} color={chip.color} size="small" variant="outlined" />
-                  }
-                  sx={{ pr: 12 }}
+                  sx={{ pr: 2, gap: 1, flexWrap: 'wrap', alignItems: 'flex-start', py: 1.5 }}
                 >
                   <ListItemText
                     primary={record.form_title || 'Untitled'}
                     secondary={`${formatDate(record.created_at)} · ${record.total_responses} responses`}
+                    sx={{ flexShrink: 1 }}
                   />
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0, pt: 0.5 }}>
+                    <Chip label={chip.label} color={chip.color} size="small" variant="outlined" />
+                    {canResume && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => { onResume(record.pipeline_id); onClose(); }}
+                      >
+                        Resume
+                      </Button>
+                    )}
+                    {canResubmit && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        disabled={!hasEnoughCredits}
+                        title={!hasEnoughCredits ? `Need ${record.total_responses} credits` : undefined}
+                        onClick={() => { onResubmit(record.pipeline_id); onClose(); }}
+                      >
+                        Resubmit
+                      </Button>
+                    )}
+                  </Box>
                 </ListItem>
               );
             })}

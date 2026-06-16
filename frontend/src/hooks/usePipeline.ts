@@ -117,6 +117,7 @@ export function usePipeline(getToken: () => Promise<string>) {
   const [error, setError] = useState<string | null>(null);
   const [pipelineId, setPipelineId] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewData | null>(null);
+  const [defaultSelectedCodes, setDefaultSelectedCodes] = useState<string[] | null>(null);
   const [submitProgress, setSubmitProgress] = useState<{
     current: number;
     total: number;
@@ -244,6 +245,7 @@ export function usePipeline(getToken: () => Promise<string>) {
       setLog([]);
       setResults({});
       setPreview(null);
+      setDefaultSelectedCodes(null);
       setPipelineId(null);
       setSubmitProgress(null);
       setError(null);
@@ -306,6 +308,42 @@ export function usePipeline(getToken: () => Promise<string>) {
     }
   }, [getToken]);
 
+  /**
+   * Load a pipeline from history (by id) without touching localStorage as a source.
+   * Returns the response count so the caller can sync its own count state.
+   */
+  const loadFromHistory = useCallback(
+    async (pipelineId: string): Promise<number> => {
+      setLog([]);
+      setResults({});
+      setError(null);
+      setSubmitProgress(null);
+
+      const res = await fetch(`${API_URL}/pipelines/${pipelineId}`, {
+        headers: await buildHeaders(getToken),
+      });
+      if (!res.ok) throw new Error(`Failed to load pipeline: ${res.status}`);
+      const data = (await res.json()) as {
+        status: string;
+        preview: PreviewData | null;
+        total_responses: number;
+        selected_persona_codes: string[] | null;
+      };
+      if (!data.preview) throw new Error('No preview available for this pipeline');
+
+      setPipelineId(pipelineId);
+      setPreview(data.preview);
+      setDefaultSelectedCodes(data.selected_persona_codes ?? null);
+      setSteps((prev) =>
+        prev.map((s, i) => (i <= 1 ? { ...s, status: 'done' } : { ...s, status: 'pending' })),
+      );
+      setStatus('preview');
+      savePending({ pipelineId, count: data.total_responses });
+      return data.total_responses;
+    },
+    [getToken],
+  );
+
   /** Paid phase: generate + submit responses for the selected personas. */
   const submitResponses = useCallback(
     async (selectedCodes: string[], totalResponses: number): Promise<boolean> => {
@@ -353,6 +391,7 @@ export function usePipeline(getToken: () => Promise<string>) {
     setLog([]);
     setResults({});
     setPreview(null);
+    setDefaultSelectedCodes(null);
     setPipelineId(null);
     setSubmitProgress(null);
     setError(null);
@@ -365,11 +404,13 @@ export function usePipeline(getToken: () => Promise<string>) {
     results,
     error,
     preview,
+    defaultSelectedCodes,
     pipelineId,
     submitProgress,
     startPreview,
     submitResponses,
     restore,
+    loadFromHistory,
     reset,
     setStatus,
   };

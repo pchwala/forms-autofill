@@ -15,11 +15,14 @@ interface Props {
   count: number;
   hasCredits: boolean;
   busy?: boolean;
+  defaultSelectedCodes?: string[] | null;
   onSubmit: (selectedCodes: string[]) => void;
 }
 
-export default function PreviewResults({ preview, count, hasCredits, busy, onSubmit }: Props) {
-  const [selected, setSelected] = useState<string[]>(() => preview.personas.map((p) => p.code));
+export default function PreviewResults({ preview, count, hasCredits, busy, defaultSelectedCodes, onSubmit }: Props) {
+  const [selected, setSelected] = useState<string[]>(
+    () => defaultSelectedCodes ?? preview.personas.map((p) => p.code),
+  );
 
   const distributions = useMemo(
     () => aggregateDistributions(preview.personas, selected, preview.questions),
