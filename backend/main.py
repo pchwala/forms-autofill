@@ -126,12 +126,12 @@ def _load_pipeline_record(pipeline_id: str, uid: str) -> dict | None:
 
 def _verify(authorization: str | None) -> dict[str, str]:
     if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Brak tokenu Bearer")
+        raise HTTPException(status_code=401, detail="Missing Bearer token")
     token = authorization[len("Bearer "):]
     try:
         decoded = firebase_auth.verify_id_token(token)
     except Exception:
-        raise HTTPException(status_code=401, detail="Nieprawidłowy lub wygasły token")
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
     return {"uid": decoded["uid"], "email": decoded.get("email", "")}
 
 
@@ -150,7 +150,7 @@ def _make_job(loop: asyncio.AbstractEventLoop) -> tuple[str, asyncio.Queue, Call
 async def stream(job_id: str, authorization: str | None = Header(default=None)):
     _verify(authorization)
     if job_id not in _jobs:
-        raise HTTPException(status_code=404, detail="Zadanie nie znalezione")
+        raise HTTPException(status_code=404, detail="Job not found")
 
     async def generator() -> AsyncGenerator[str, None]:
         q = _jobs[job_id]["queue"]
@@ -206,7 +206,7 @@ class PreviewRequest(BaseModel):
     @classmethod
     def _validate_total(cls, v: int) -> int:
         if not (1 <= v <= 1000):
-            raise ValueError("total_responses musi być między 1 a 1000")
+            raise ValueError("total_responses must be between 1 and 1000")
         return v
 
 
@@ -218,14 +218,14 @@ class SubmitRequest(BaseModel):
     @classmethod
     def _validate_total(cls, v: int) -> int:
         if not (1 <= v <= 1000):
-            raise ValueError("total_responses musi być między 1 a 1000")
+            raise ValueError("total_responses must be between 1 and 1000")
         return v
 
     @field_validator("selected_persona_codes")
     @classmethod
     def _validate_codes(cls, v: list[str]) -> list[str]:
         if not v:
-            raise ValueError("Należy wybrać co najmniej jedną personę")
+            raise ValueError("At least one persona must be selected")
         return v
 
 
@@ -291,12 +291,12 @@ async def submit_pipeline(
 
     record = _load_pipeline_record(pipeline_id, uid)
     if record is None or record.get("status") == "in_progress":
-        raise HTTPException(status_code=404, detail="Potok nie znaleziony lub nie jest gotowy")
+        raise HTTPException(status_code=404, detail="Pipeline not found or not ready")
 
     # 1 credit = 1 submitted response. Require enough balance up front; the actual charge
     # (successful submissions only) is applied by the worker once the run completes.
     if get_credits(uid) < req.total_responses:
-        raise HTTPException(status_code=402, detail="Niewystarczające kredyty; wymagana płatność")
+        raise HTTPException(status_code=402, detail="Insufficient credits; payment required")
 
     form_config = record["form_config"]
 
@@ -342,7 +342,7 @@ async def get_pipeline_status(
     uid = user["uid"]
     doc = get_pipeline(pipeline_id, uid)
     if doc is None:
-        raise HTTPException(status_code=404, detail="Potok nie znaleziony")
+        raise HTTPException(status_code=404, detail="Pipeline not found")
     return {
         "status": doc.get("status"),
         "preview": doc.get("preview"),
@@ -384,9 +384,9 @@ async def billing_checkout(
     uid = user["uid"]
 
     if req.pack not in PACKS:
-        raise HTTPException(status_code=400, detail=f"Nieznany pakiet: {req.pack}")
+        raise HTTPException(status_code=400, detail=f"Unknown pack: {req.pack}")
     if req.quantity < 1:
-        raise HTTPException(status_code=400, detail="ilość musi wynosić co najmniej 1")
+        raise HTTPException(status_code=400, detail="Quantity must be at least 1")
 
     pack = PACKS[req.pack]
     total_credits = pack["credits"] * req.quantity
@@ -415,9 +415,9 @@ async def stripe_webhook(request: Request):
     try:
         event = stripe.Webhook.construct_event(body, sig_header, _STRIPE_WEBHOOK_SECRET)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Nieprawidłowy ładunek")
+        raise HTTPException(status_code=400, detail="Invalid payload")
     except stripe.errors.SignatureVerificationError:
-        raise HTTPException(status_code=400, detail="Nieprawidłowy podpis")
+        raise HTTPException(status_code=400, detail="Invalid signature")
 
     if event["type"] == "checkout.session.completed":
         await _fulfill_checkout(event["data"]["object"])
