@@ -15,17 +15,23 @@ import CloseIcon from '@mui/icons-material/Close';
 import { useBilling, type Pack, type PackKey } from '../hooks/useBilling';
 
 const PACK_LABELS: Record<PackKey, string> = {
-  small: 'Small',
-  medium: 'Medium',
-  large: 'Large',
+  small: 'Mały',
+  medium: 'Średni',
+  large: 'Duży',
 };
+
+function plCredits(n: number): string {
+  if (n === 1) return 'kredyt';
+  if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) return 'kredyty';
+  return 'kredytów';
+}
 
 const PACK_ORDER: PackKey[] = ['small', 'medium', 'large'];
 
 const DISCOUNT_LABEL: Record<PackKey, string | null> = {
   small: null,
-  medium: '15% off',
-  large: '25% off',
+  medium: '15% taniej',
+  large: '25% taniej',
 };
 
 interface Props {
@@ -81,7 +87,7 @@ export default function PaywallDialog({
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="sm" fullWidth>
       <DialogTitle sx={{ pr: 6 }}>
-        Unlock submission
+        Odblokuj wysyłkę
         <IconButton
           onClick={onClose}
           disabled={busy}
@@ -94,8 +100,8 @@ export default function PaywallDialog({
 
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 3, pb: 3 }}>
         <Typography variant="body2" color="text.secondary">
-          You have <strong>{creditsHeld}</strong> credit{creditsHeld !== 1 ? 's' : ''} · need{' '}
-          <strong>{creditsNeeded}</strong> to submit
+          Masz <strong>{creditsHeld}</strong> {plCredits(creditsHeld)} · potrzebujesz{' '}
+          <strong>{creditsNeeded}</strong> do wysyłki
         </Typography>
 
         {/* Pack cards */}
@@ -142,7 +148,7 @@ export default function PaywallDialog({
         {/* Quantity */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <TextField
-            label="Quantity"
+            label="Ilość"
             type="number"
             size="small"
             value={quantity}
@@ -152,11 +158,11 @@ export default function PaywallDialog({
           />
           {packData && (
             <Typography variant="body2" color="text.secondary">
-              = {selectedCredits} credits ·{' '}
+              = {selectedCredits} {plCredits(selectedCredits)} ·{' '}
               {formatPrice(packData[selectedPack].pln * quantity)}
               {still_short && (
                 <Typography component="span" variant="body2" color="warning.main">
-                  {' '}(still {creditsNeeded - creditsHeld - selectedCredits} short)
+                  {' '}(brak jeszcze {creditsNeeded - creditsHeld - selectedCredits})
                 </Typography>
               )}
             </Typography>
@@ -176,7 +182,7 @@ export default function PaywallDialog({
           disabled={busy || !packData}
           fullWidth
         >
-          {busy ? 'Redirecting…' : 'Continue to payment'}
+          {busy ? 'Przekierowywanie…' : 'Przejdź do płatności'}
         </Button>
       </DialogContent>
     </Dialog>

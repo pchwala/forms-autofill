@@ -18,23 +18,23 @@ const HOW_IT_WORKS: HowItWorksItem[] = [
   {
     icon: <LinkIcon sx={{ fontSize: 26, color: '#1976d2' }} />,
     step: '01',
-    title: 'Paste your form & desired outcome',
+    title: 'Wklej link do formularza i oczekiwany rezultat',
     description:
-      'Drop in any public Google Form link and optionally describe the outcome you want. The AI fetches the form and builds a response strategy — for free.',
+      'Wklej dowolny publiczny link do formularza Google i opcjonalnie opisz oczekiwany rezultat. AI pobiera formularz i buduje strategię odpowiedzi — za darmo.',
   },
   {
     icon: <SmartToyIcon sx={{ fontSize: 26, color: '#9c27b0' }} />,
     step: '02',
-    title: 'Review the predicted results',
+    title: 'Przejrzyj przewidywane wyniki',
     description:
-      'See the respondent personas and the predicted answer distributions before anything is sent. Pick which personas to include and watch the results update live.',
+      'Zobacz persony respondentów i przewidywane rozkłady odpowiedzi, zanim cokolwiek zostanie wysłane. Wybierz persony do uwzględnienia i obserwuj aktualizacje na żywo.',
   },
   {
     icon: <SendIcon sx={{ fontSize: 26, color: '#4caf50' }} />,
     step: '03',
-    title: 'Unlock & submit',
+    title: 'Odblokuj i wyślij',
     description:
-      'Happy with the preview? Unlock submission to generate and auto-submit the shuffled responses directly to your Google Form.',
+      'Zadowolony z podglądu? Odblokuj wysyłkę, aby wygenerować i automatycznie wysłać losowe odpowiedzi bezpośrednio do Twojego formularza Google.',
   },
 ];
 
@@ -42,7 +42,7 @@ export default function HowItWorksSection() {
   return (
     <Box sx={{ mb: 6 }}>
       <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 2 }}>
-        How it works
+        Jak to działa
       </Typography>
       <Box
         sx={{

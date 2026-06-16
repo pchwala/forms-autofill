@@ -139,7 +139,7 @@ class StrategyGenerator:
     ) -> pathlib.Path:
         # ── Step 1: Web search ──────────────────────────────────────────
         if start_step <= 1:
-            msg = "Step 1/3 — Searching the web for research papers"
+            msg = "Krok 1/3 — Wyszukiwanie artykułów badawczych"
             print(msg)
             if emit:
                 emit({"type": "message", "text": msg})
@@ -149,7 +149,7 @@ class StrategyGenerator:
                 json.dumps(research_basis, indent=2, ensure_ascii=False), encoding="utf-8"
             )
             n = len(research_basis.get("research_basis", []))
-            msg2 = f"  Found {n} paper(s)."
+            msg2 = f"  Znaleziono {n} artykuł(ów)."
             print(msg2 + f" Saved → {rb_path}")
             if emit:
                 emit({"type": "message", "text": msg2})
@@ -157,14 +157,14 @@ class StrategyGenerator:
             rb_path = self._research_basis_path()
             research_basis = json.loads(rb_path.read_text(encoding="utf-8"))
             n = len(research_basis.get("research_basis", []))
-            msg = f"Step 1/3 — Skipped (loaded {n} paper(s) from {rb_path})"
+            msg = f"Krok 1/3 — Pominięto (załadowano {n} artykuł(ów) z {rb_path})"
             print(msg)
             if emit:
                 emit({"type": "message", "text": msg})
 
         # ── Step 2: Analysis ────────────────────────────────────────────
         if start_step <= 2:
-            msg = "Step 2/3 — Analyzing papers, building distributions and persona archetypes"
+            msg = "Krok 2/3 — Analizowanie artykułów, budowanie rozkładów i archetypów person"
             print(msg)
             if emit:
                 emit({"type": "message", "text": msg})
@@ -174,7 +174,7 @@ class StrategyGenerator:
                 json.dumps(research_analysis, indent=2, ensure_ascii=False), encoding="utf-8"
             )
             np_ = len(research_analysis.get("suggested_personas", []))
-            msg2 = f"  Created {np_} persona archetype(s)."
+            msg2 = f"  Utworzono {np_} archetyp(ów) person."
             print(msg2 + f" Saved → {ra_path}")
             if emit:
                 emit({"type": "message", "text": msg2})
@@ -182,13 +182,13 @@ class StrategyGenerator:
             ra_path = self._research_analysis_path()
             research_analysis = json.loads(ra_path.read_text(encoding="utf-8"))
             np_ = len(research_analysis.get("suggested_personas", []))
-            msg = f"Step 2/3 — Skipped (loaded {np_} archetype(s) from {ra_path})"
+            msg = f"Krok 2/3 — Pominięto (załadowano {np_} archetyp(ów) z {ra_path})"
             print(msg)
             if emit:
                 emit({"type": "message", "text": msg})
 
         # ── Step 3: Compile final strategy ──────────────────────────────
-        msg = "Step 3/3 — Compiling personas and final strategy"
+        msg = "Krok 3/3 — Kompilowanie person i finalnej strategii"
         print(msg)
         if emit:
             emit({"type": "message", "text": msg})
@@ -199,7 +199,7 @@ class StrategyGenerator:
             json.dumps(strategy, indent=2, ensure_ascii=False), encoding="utf-8"
         )
         np_ = len(strategy.get("personas", []))
-        msg2 = f"  Compiled {np_} persona(s)."
+        msg2 = f"  Skompilowano {np_} person."
         print(msg2 + f" Saved → {dest}")
         print(
             f'\nDone! Set "strategy_file": "{dest}" in your form_config, '
@@ -251,7 +251,9 @@ Return ONLY a JSON object matching this schema exactly (no markdown, no explanat
       "applicable_questions": ["Q9", "Q14"]
     }}
   ]
-}}"""
+}}
+
+LANGUAGE: Write all descriptive text values (abstract, key_findings text) in Polish (język polski). JSON field names and question IDs MUST remain exactly as given."""
 
         response = self._client.responses.create(
             model=self._model,
@@ -344,7 +346,9 @@ Return ONLY a JSON object with this schema (no markdown, no explanation):
       "then": {{"<question_id>": {{"<option>": <integer percent>, ...}}}}
     }}
   ]
-}}"""
+}}
+
+LANGUAGE: Write all descriptive text values (topic_summary, persona name, persona description, correlation rule description) in Polish (język polski). JSON field names, question IDs, and option strings that appear verbatim in the survey questions MUST remain exactly as given."""
 
         completion = self._client.chat.completions.create(
             model=self._model,
@@ -420,7 +424,9 @@ Return ONLY a JSON object with this schema (no markdown, no explanation):
     }}
   ],
   "correlation_rules": [ ...copy from analysis... ]
-}}"""
+}}
+
+LANGUAGE: Write all descriptive text values (topic_summary, persona name, persona description, correlation rule description) in Polish (język polski). JSON field names, question IDs, and option strings that appear verbatim in the survey questions MUST remain exactly as given."""
 
         completion = self._client.chat.completions.create(
             model=self._model,

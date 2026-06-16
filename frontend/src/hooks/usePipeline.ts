@@ -48,11 +48,11 @@ export interface PreviewData {
 }
 
 const STEP_LABELS = [
-  'Extract form',
-  'Generate strategy',
-  'Generate responses',
-  'Shuffle responses',
-  'Submit responses',
+  'Pobieranie formularza',
+  'Generowanie strategii',
+  'Generowanie odpowiedzi',
+  'Mieszanie odpowiedzi',
+  'Wysyłanie odpowiedzi',
 ];
 
 function makeSteps(): StepInfo[] {
@@ -178,7 +178,7 @@ export function usePipeline(getToken: () => Promise<string>) {
               if (done) {
                 // Stream closed without a terminal 'done'/'error' event — settle so the
                 // caller never hangs. A no-op if the promise was already resolved/rejected.
-                reject(new Error('Stream closed before completion'));
+                reject(new Error('Połączenie przerwane przed zakończeniem'));
                 break;
               }
               buffer += decoder.decode(value, { stream: true });
@@ -259,7 +259,7 @@ export function usePipeline(getToken: () => Promise<string>) {
           desire_prompt: desirePrompt.trim() || null,
         }),
       });
-      if (!res.ok) throw new Error(`Failed to start preview: ${res.status}`);
+      if (!res.ok) throw new Error(`Błąd uruchamiania podglądu: ${res.status}`);
       const { job_id, pipeline_id } = (await res.json()) as {
         job_id: string;
         pipeline_id: string;
@@ -322,14 +322,14 @@ export function usePipeline(getToken: () => Promise<string>) {
       const res = await fetch(`${API_URL}/pipelines/${pipelineId}`, {
         headers: await buildHeaders(getToken),
       });
-      if (!res.ok) throw new Error(`Failed to load pipeline: ${res.status}`);
+      if (!res.ok) throw new Error(`Błąd ładowania potoku: ${res.status}`);
       const data = (await res.json()) as {
         status: string;
         preview: PreviewData | null;
         total_responses: number;
         selected_persona_codes: string[] | null;
       };
-      if (!data.preview) throw new Error('No preview available for this pipeline');
+      if (!data.preview) throw new Error('Brak podglądu dla tego potoku');
 
       setPipelineId(pipelineId);
       setPreview(data.preview);
@@ -370,7 +370,7 @@ export function usePipeline(getToken: () => Promise<string>) {
         setStatus('blocked');
         return false;
       }
-      if (!res.ok) throw new Error(`Submit failed: ${res.status}`);
+      if (!res.ok) throw new Error(`Błąd wysyłania: ${res.status}`);
       const { job_id } = (await res.json()) as { job_id: string };
       const doneEvent = await openStream(job_id);
       appendLog(`Pipeline complete — ${doneEvent.total} responses submitted.`);

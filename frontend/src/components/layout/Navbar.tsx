@@ -1,3 +1,9 @@
+function plCredits(n: number): string {
+  if (n === 1) return 'kredyt';
+  if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) return 'kredyty';
+  return 'kredytów';
+}
+
 import AppBar from '@mui/material/AppBar';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -39,7 +45,7 @@ export default function Navbar({ user, isAnonymous, credits, onSignIn, onSignOut
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Typography variant="body2" color="text.secondary">
-            {credits} credit{credits === 1 ? '' : 's'}
+            {credits} {plCredits(credits)}
           </Typography>
           {signedInWithGoogle ? (
             <UserMenu user={user!} onSignOut={onSignOut} onHistory={onHistory} />
@@ -50,7 +56,7 @@ export default function Navbar({ user, isAnonymous, credits, onSignIn, onSignOut
               startIcon={<GoogleIcon />}
               onClick={onSignIn}
             >
-              Sign in
+              Zaloguj się
             </Button>
           )}
         </Box>

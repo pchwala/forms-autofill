@@ -241,6 +241,9 @@ class ResponseGenerator:
         routing_text = self._build_routing_text()
         return (
             "You are a survey response generator.\n\n"
+            "LANGUAGE: For any open-ended (free-text) question answers, write in Polish "
+            "(język polski). For questions with predefined options, use the exact option "
+            "strings as given — do not translate them.\n\n"
             "STRATEGY DOCUMENT (follow it strictly):\n"
             "========================================\n"
             + strategy_text
