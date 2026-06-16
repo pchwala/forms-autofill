@@ -10,11 +10,9 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import IconButton from '@mui/material/IconButton';
 import TextField from '@mui/material/TextField';
-import ToggleButton from '@mui/material/ToggleButton';
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 import CloseIcon from '@mui/icons-material/Close';
-import { useBilling, type Currency, type Pack, type PackKey } from '../hooks/useBilling';
+import { useBilling, type Pack, type PackKey } from '../hooks/useBilling';
 
 const PACK_LABELS: Record<PackKey, string> = {
   small: 'Small',
@@ -49,7 +47,6 @@ export default function PaywallDialog({
 
   const [packData, setPackData] = useState<Record<PackKey, Pack> | null>(null);
   const [selectedPack, setSelectedPack] = useState<PackKey>('small');
-  const [currency, setCurrency] = useState<Currency>('pln');
   const [quantity, setQuantity] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +63,7 @@ export default function PaywallDialog({
     setBusy(true);
     setError(null);
     try {
-      const url = await checkout(selectedPack, currency, quantity);
+      const url = await checkout(selectedPack, quantity);
       window.location.href = url;
     } catch (err) {
       setError((err as Error).message);
@@ -78,9 +75,7 @@ export default function PaywallDialog({
   const still_short = creditsNeeded > creditsHeld + selectedCredits;
 
   function formatPrice(cents: number): string {
-    return currency === 'pln'
-      ? `${(cents / 100).toFixed(2).replace('.', ',')} zł`
-      : `$${(cents / 100).toFixed(2)}`;
+    return `${(cents / 100).toFixed(2).replace('.', ',')} zł`;
   }
 
   return (
@@ -98,21 +93,10 @@ export default function PaywallDialog({
       </DialogTitle>
 
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 3, pb: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="body2" color="text.secondary">
-            You have <strong>{creditsHeld}</strong> credit{creditsHeld !== 1 ? 's' : ''} · need{' '}
-            <strong>{creditsNeeded}</strong> to submit
-          </Typography>
-          <ToggleButtonGroup
-            value={currency}
-            exclusive
-            size="small"
-            onChange={(_, v: Currency | null) => v && setCurrency(v)}
-          >
-            <ToggleButton value="pln">PLN</ToggleButton>
-            <ToggleButton value="usd">USD</ToggleButton>
-          </ToggleButtonGroup>
-        </Box>
+        <Typography variant="body2" color="text.secondary">
+          You have <strong>{creditsHeld}</strong> credit{creditsHeld !== 1 ? 's' : ''} · need{' '}
+          <strong>{creditsNeeded}</strong> to submit
+        </Typography>
 
         {/* Pack cards */}
         <Box sx={{ display: 'flex', gap: 1.5 }}>
@@ -143,7 +127,7 @@ export default function PaywallDialog({
                       credits
                     </Typography>
                     <Typography variant="body2" sx={{ mt: 1 }}>
-                      {pack ? formatPrice(pack[currency]) : '—'}
+                      {pack ? formatPrice(pack.pln) : '—'}
                     </Typography>
                     {discount && (
                       <Chip label={discount} size="small" color="success" sx={{ mt: 0.5 }} />
@@ -169,7 +153,7 @@ export default function PaywallDialog({
           {packData && (
             <Typography variant="body2" color="text.secondary">
               = {selectedCredits} credits ·{' '}
-              {formatPrice(packData[selectedPack][currency] * quantity)}
+              {formatPrice(packData[selectedPack].pln * quantity)}
               {still_short && (
                 <Typography component="span" variant="body2" color="warning.main">
                   {' '}(still {creditsNeeded - creditsHeld - selectedCredits} short)

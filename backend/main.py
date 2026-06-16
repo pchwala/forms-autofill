@@ -47,9 +47,9 @@ _APP_URL = os.getenv(
 )
 
 PACKS: dict[str, dict] = {
-    "small":  {"credits": 20,  "usd": 99,   "pln": 499},
-    "medium": {"credits": 100, "usd": 425,  "pln": 2125},
-    "large":  {"credits": 200, "usd": 750,  "pln": 3750},
+    "small":  {"credits": 20,  "pln": 499,  "price_id_pln": "price_1TirsbGTTvSZKTeSsQa8CVxY"},
+    "medium": {"credits": 100, "pln": 2125, "price_id_pln": "price_1Tirt0GTTvSZKTeSxt6KKgz1"},
+    "large":  {"credits": 200, "pln": 3750, "price_id_pln": "price_1TirtMGTTvSZKTeSF4l8chEg"},
 }
 
 app = FastAPI(title="Forms Autofill API")
@@ -367,7 +367,6 @@ async def billing_packs():
 
 class CheckoutRequest(BaseModel):
     pack: str
-    currency: str
     quantity: int = 1
 
 
@@ -381,28 +380,16 @@ async def billing_checkout(
 
     if req.pack not in PACKS:
         raise HTTPException(status_code=400, detail=f"Unknown pack: {req.pack}")
-    if req.currency not in ("usd", "pln"):
-        raise HTTPException(status_code=400, detail="currency must be 'usd' or 'pln'")
     if req.quantity < 1:
         raise HTTPException(status_code=400, detail="quantity must be at least 1")
 
     pack = PACKS[req.pack]
     total_credits = pack["credits"] * req.quantity
-    product_name = f"{pack['credits']} credits"
 
     try:
         session = stripe.checkout.Session.create(
             mode="payment",
-            line_items=[
-                {
-                    "price_data": {
-                        "currency": req.currency,
-                        "unit_amount": pack[req.currency],
-                        "product_data": {"name": product_name},
-                    },
-                    "quantity": req.quantity,
-                }
-            ],
+            line_items=[{"price": pack["price_id_pln"], "quantity": req.quantity}],
             metadata={"uid": uid, "credits": str(total_credits)},
             success_url=f"{_APP_URL}/?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{_APP_URL}/?checkout=cancel",
