@@ -94,7 +94,7 @@ export default function HistoryDialog({ open, onClose, getToken, credits, onResu
         {!loading && !error && records.length === 0 && (
           <Box sx={{ p: 3, textAlign: 'center' }}>
             <Typography variant="body2" color="text.secondary">
-              Brak historii. Uruchom potok, aby zobaczyć go tutaj.
+              Brak historii. Rozpocznij proces, aby zobaczyć go tutaj.
             </Typography>
           </Box>
         )}

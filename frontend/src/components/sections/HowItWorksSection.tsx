@@ -20,21 +20,21 @@ const HOW_IT_WORKS: HowItWorksItem[] = [
     step: '01',
     title: 'Wklej link do formularza i oczekiwany rezultat',
     description:
-      'Wklej dowolny publiczny link do formularza Google i opcjonalnie opisz oczekiwany rezultat. AI pobiera formularz i buduje strategię odpowiedzi — za darmo.',
+      'Wklej dowolny publiczny link do formularza Google i opcjonalnie opisz oczekiwany rezultat. System pobiera formularz i buduje strategię odpowiedzi — za darmo.',
   },
   {
     icon: <SmartToyIcon sx={{ fontSize: 26, color: '#9c27b0' }} />,
     step: '02',
     title: 'Przejrzyj przewidywane wyniki',
     description:
-      'Zobacz persony respondentów i przewidywane rozkłady odpowiedzi, zanim cokolwiek zostanie wysłane. Wybierz persony do uwzględnienia i obserwuj aktualizacje na żywo.',
+      'Zobacz persony respondentów i przewidywany rozkład odpowiedzi, zanim cokolwiek zostanie wysłane. Wybierz typy odpowiedzi do uwzględnienia i obserwuj aktualizacje na żywo.',
   },
   {
     icon: <SendIcon sx={{ fontSize: 26, color: '#4caf50' }} />,
     step: '03',
     title: 'Odblokuj i wyślij',
     description:
-      'Zadowolony z podglądu? Odblokuj wysyłkę, aby wygenerować i automatycznie wysłać losowe odpowiedzi bezpośrednio do Twojego formularza Google.',
+      'Zadowolony z podglądu? Odblokuj wysyłkę, aby wygenerować i automatycznie wysłać odpowiedzi nieodróżnialne od ludzkich bezpośrednio do Twojego formularza Google.',
   },
 ];
 
@@ -68,7 +68,7 @@ export default function HowItWorksSection() {
                   variant="caption"
                   sx={{ color: 'text.secondary', fontWeight: 700, letterSpacing: 1 }}
                 >
-                  STEP {step}
+                  KROK {step}
                 </Typography>
               </Box>
               <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75 }}>

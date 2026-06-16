@@ -66,7 +66,7 @@ export default function PipelineSection({
   return (
     <>
       <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 2 }}>
-        Uruchom potok
+        Rozpocznij proces
       </Typography>
       <Paper variant="outlined" sx={{ p: 3, mt: 1.5, mb: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
         {/* Input form — hidden once we have a preview to focus on */}
@@ -128,7 +128,7 @@ export default function PipelineSection({
 
         {/* Done */}
         {isDone && (
-          <Alert severity="success">Potok zakończony — wszystkie odpowiedzi zostały pomyślnie wysłane.</Alert>
+          <Alert severity="success">Przetwarzanie zakończone — wszystkie odpowiedzi zostały pomyślnie wysłane.</Alert>
         )}
 
         {/* Error */}
@@ -153,7 +153,7 @@ export default function PipelineSection({
 
       {/* Raw JSON dialog */}
       <Dialog open={reviewOpen} onClose={() => setReviewOpen(false)} maxWidth="md" fullWidth scroll="paper">
-        <DialogTitle>Szczegóły kroku</DialogTitle>
+        <DialogTitle>Szczegóły</DialogTitle>
         <DialogContent dividers>
           {Object.keys(results).length === 0 ? (
             <Typography variant="body2" color="text.secondary">

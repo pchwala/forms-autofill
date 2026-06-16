@@ -19,7 +19,7 @@ export default function HeroSection() {
         Forms Autofill
       </Typography>
       <Typography variant="h6" sx={{ color: 'text.secondary', fontWeight: 400, mb: 3 }}>
-        Automatycznie generuj i wysyłaj odpowiedzi AI na dowolny formularz Google — na dużą skalę.
+        Automatyczne generowanie i wysyłanie odpowiedzi do formularzy Google z wykorzystaniem AI.
       </Typography>
       <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, flexWrap: 'wrap' }}>
         <Chip label="Napędzane AI" size="small" color="primary" variant="outlined" />
