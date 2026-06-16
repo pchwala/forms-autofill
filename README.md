@@ -12,8 +12,9 @@ An AI-powered tool that automatically fills Google Forms with realistic, randomi
 | Phase | Steps | Cost |
 |-------|-------|------|
 | **Preview** (free) | 1 Extract form · 2 Generate strategy | Free |
-| **Submit** (paid) | 3 Generate responses · 4 Shuffle · 5 Submit | 1 credit per submitted response | You can bypass it by changing credits in Firestore
+| **Submit** (paid) | 3 Generate responses · 4 Shuffle · 5 Submit | 1 credit per submitted response |
 
+You can bypass payment by changing credits in Firestore. I am working on making the project able to run fully local.
 Users can review generated personas and predicted answer distributions before committing any credits.
 
 ## Prerequisites
