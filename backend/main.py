@@ -394,6 +394,7 @@ async def billing_checkout(
     try:
         session = stripe.checkout.Session.create(
             mode="payment",
+            locale="pl",
             line_items=[{"price": pack["price_id_pln"], "quantity": req.quantity}],
             metadata={"uid": uid, "credits": str(total_credits)},
             success_url=f"{_APP_URL}/?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
