@@ -170,7 +170,8 @@ class ResponseGenerator:
             for i, rule in enumerate(strategy["correlation_rules"], 1):
                 lines.append(f'\n{i}. {rule.get("description", "")}')
                 for qid, vals in rule.get("if", {}).items():
-                    lines.append(f'   IF {qid} \u2208 {{"{chr(34) + chr(34).join(vals)}"}}' )
+                    lines.append(f'   IF {qid} \u2208 {{"{chr(34) + chr(34).join(vals)}"}}')
+
                 for qid, dist in rule.get("then", {}).items():
                     dist_str = ", ".join(f"{opt}: {pct}%" for opt, pct in dist.items())
                     lines.append(f"   THEN {qid} weights \u2192 {{{dist_str}}}")
@@ -240,6 +241,9 @@ class ResponseGenerator:
         routing_text = self._build_routing_text()
         return (
             "You are a survey response generator.\n\n"
+            "LANGUAGE: For any open-ended (free-text) question answers, write in Polish "
+            "(język polski). For questions with predefined options, use the exact option "
+            "strings as given — do not translate them.\n\n"
             "STRATEGY DOCUMENT (follow it strictly):\n"
             "========================================\n"
             + strategy_text

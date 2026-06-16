@@ -18,7 +18,7 @@ export default function InputForm({ onStart, disabled }: Props) {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       <TextField
-        label="Google Form URL"
+        label="URL formularza Google"
         value={url}
         onChange={(e) => setUrl(e.target.value)}
         placeholder="https://docs.google.com/forms/..."
@@ -28,11 +28,11 @@ export default function InputForm({ onStart, disabled }: Props) {
       />
 
       <TextField
-        label="Desired outcome (optional)"
+        label="Oczekiwany rezultat (opcjonalnie)"
         value={desirePrompt}
         onChange={(e) => setDesirePrompt(e.target.value)}
-        placeholder="e.g. Most respondents should favor remote work and rate satisfaction highly"
-        helperText="Steers the generated responses toward the outcome you want — overrides the research-based defaults."
+        placeholder="np. Większość respondentów powinna preferować pracę zdalną i wysoko oceniać satysfakcję"
+        helperText="Steruje generowanymi odpowiedziami w kierunku oczekiwanego rezultatu — nadpisuje domyślne dane badawcze."
         disabled={disabled}
         fullWidth
         size="small"
@@ -42,7 +42,7 @@ export default function InputForm({ onStart, disabled }: Props) {
 
       <Box sx={{ display: 'flex', gap: 2 }}>
         <TextField
-          label="Number of responses"
+          label="Liczba odpowiedzi"
           type="number"
           value={count}
           onChange={(e) => setCount(Math.min(1000, Math.max(1, parseInt(e.target.value, 10) || 1)))}
@@ -59,7 +59,7 @@ export default function InputForm({ onStart, disabled }: Props) {
           disabled={disabled || !valid}
           onClick={() => onStart(url.trim(), count, desirePrompt)}
         >
-          Generate preview
+          Generuj podgląd
         </Button>
       </Box>
     </Box>

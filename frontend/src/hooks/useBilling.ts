@@ -2,12 +2,10 @@ const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
 export interface Pack {
   credits: number;
-  usd: number;
   pln: number;
 }
 
 export type PackKey = 'small' | 'medium' | 'large';
-export type Currency = 'usd' | 'pln';
 
 export function useBilling(getToken: () => Promise<string>) {
   async function packs(): Promise<Record<PackKey, Pack>> {
@@ -16,14 +14,14 @@ export function useBilling(getToken: () => Promise<string>) {
     return res.json() as Promise<Record<PackKey, Pack>>;
   }
 
-  async function checkout(pack: PackKey, currency: Currency, quantity: number): Promise<string> {
+  async function checkout(pack: PackKey, quantity: number): Promise<string> {
     const token = await getToken();
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
     const res = await fetch(`${API_URL}/billing/checkout`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ pack, currency, quantity }),
+      body: JSON.stringify({ pack, quantity }),
     });
     if (!res.ok) throw new Error(`Checkout failed: ${res.status}`);
     const data = (await res.json()) as { url: string };

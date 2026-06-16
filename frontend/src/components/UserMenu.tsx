@@ -45,7 +45,7 @@ export default function UserMenu({ user, onSignOut, onHistory }: Props) {
 
   return (
     <>
-      <IconButton onClick={handleOpen} size="small" aria-label="account menu">
+      <IconButton onClick={handleOpen} size="small" aria-label="menu konta">
         <Avatar sx={{ width: 32, height: 32, bgcolor: bgColor, fontSize: '0.875rem', fontWeight: 700 }}>
           {initials}
         </Avatar>
@@ -64,9 +64,9 @@ export default function UserMenu({ user, onSignOut, onHistory }: Props) {
           </Typography>
         </MenuItem>
         <Divider />
-        <MenuItem onClick={handleHistory}>History</MenuItem>
+        <MenuItem onClick={handleHistory}>Historia</MenuItem>
         <Divider />
-        <MenuItem onClick={handleSignOut}>Sign out</MenuItem>
+        <MenuItem onClick={handleSignOut}>Wyloguj się</MenuItem>
       </Menu>
     </>
   );

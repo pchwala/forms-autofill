@@ -48,11 +48,11 @@ export interface PreviewData {
 }
 
 const STEP_LABELS = [
-  'Extract form',
-  'Generate strategy',
-  'Generate responses',
-  'Shuffle responses',
-  'Submit responses',
+  'Pobieranie formularza',
+  'Generowanie strategii',
+  'Generowanie odpowiedzi',
+  'Mieszanie odpowiedzi',
+  'Wysyłanie odpowiedzi',
 ];
 
 function makeSteps(): StepInfo[] {
@@ -117,6 +117,7 @@ export function usePipeline(getToken: () => Promise<string>) {
   const [error, setError] = useState<string | null>(null);
   const [pipelineId, setPipelineId] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewData | null>(null);
+  const [defaultSelectedCodes, setDefaultSelectedCodes] = useState<string[] | null>(null);
   const [submitProgress, setSubmitProgress] = useState<{
     current: number;
     total: number;
@@ -177,7 +178,7 @@ export function usePipeline(getToken: () => Promise<string>) {
               if (done) {
                 // Stream closed without a terminal 'done'/'error' event — settle so the
                 // caller never hangs. A no-op if the promise was already resolved/rejected.
-                reject(new Error('Stream closed before completion'));
+                reject(new Error('Połączenie przerwane przed zakończeniem'));
                 break;
               }
               buffer += decoder.decode(value, { stream: true });
@@ -244,6 +245,7 @@ export function usePipeline(getToken: () => Promise<string>) {
       setLog([]);
       setResults({});
       setPreview(null);
+      setDefaultSelectedCodes(null);
       setPipelineId(null);
       setSubmitProgress(null);
       setError(null);
@@ -257,7 +259,7 @@ export function usePipeline(getToken: () => Promise<string>) {
           desire_prompt: desirePrompt.trim() || null,
         }),
       });
-      if (!res.ok) throw new Error(`Failed to start preview: ${res.status}`);
+      if (!res.ok) throw new Error(`Błąd uruchamiania podglądu: ${res.status}`);
       const { job_id, pipeline_id } = (await res.json()) as {
         job_id: string;
         pipeline_id: string;
@@ -306,6 +308,42 @@ export function usePipeline(getToken: () => Promise<string>) {
     }
   }, [getToken]);
 
+  /**
+   * Load a pipeline from history (by id) without touching localStorage as a source.
+   * Returns the response count so the caller can sync its own count state.
+   */
+  const loadFromHistory = useCallback(
+    async (pipelineId: string): Promise<number> => {
+      setLog([]);
+      setResults({});
+      setError(null);
+      setSubmitProgress(null);
+
+      const res = await fetch(`${API_URL}/pipelines/${pipelineId}`, {
+        headers: await buildHeaders(getToken),
+      });
+      if (!res.ok) throw new Error(`Błąd ładowania potoku: ${res.status}`);
+      const data = (await res.json()) as {
+        status: string;
+        preview: PreviewData | null;
+        total_responses: number;
+        selected_persona_codes: string[] | null;
+      };
+      if (!data.preview) throw new Error('Brak podglądu dla tego potoku');
+
+      setPipelineId(pipelineId);
+      setPreview(data.preview);
+      setDefaultSelectedCodes(data.selected_persona_codes ?? null);
+      setSteps((prev) =>
+        prev.map((s, i) => (i <= 1 ? { ...s, status: 'done' } : { ...s, status: 'pending' })),
+      );
+      setStatus('preview');
+      savePending({ pipelineId, count: data.total_responses });
+      return data.total_responses;
+    },
+    [getToken],
+  );
+
   /** Paid phase: generate + submit responses for the selected personas. */
   const submitResponses = useCallback(
     async (selectedCodes: string[], totalResponses: number): Promise<boolean> => {
@@ -332,7 +370,7 @@ export function usePipeline(getToken: () => Promise<string>) {
         setStatus('blocked');
         return false;
       }
-      if (!res.ok) throw new Error(`Submit failed: ${res.status}`);
+      if (!res.ok) throw new Error(`Błąd wysyłania: ${res.status}`);
       const { job_id } = (await res.json()) as { job_id: string };
       const doneEvent = await openStream(job_id);
       appendLog(`Pipeline complete — ${doneEvent.total} responses submitted.`);
@@ -353,6 +391,7 @@ export function usePipeline(getToken: () => Promise<string>) {
     setLog([]);
     setResults({});
     setPreview(null);
+    setDefaultSelectedCodes(null);
     setPipelineId(null);
     setSubmitProgress(null);
     setError(null);
@@ -365,11 +404,13 @@ export function usePipeline(getToken: () => Promise<string>) {
     results,
     error,
     preview,
+    defaultSelectedCodes,
     pipelineId,
     submitProgress,
     startPreview,
     submitResponses,
     restore,
+    loadFromHistory,
     reset,
     setStatus,
   };

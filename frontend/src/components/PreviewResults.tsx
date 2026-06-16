@@ -15,11 +15,14 @@ interface Props {
   count: number;
   hasCredits: boolean;
   busy?: boolean;
+  defaultSelectedCodes?: string[] | null;
   onSubmit: (selectedCodes: string[]) => void;
 }
 
-export default function PreviewResults({ preview, count, hasCredits, busy, onSubmit }: Props) {
-  const [selected, setSelected] = useState<string[]>(() => preview.personas.map((p) => p.code));
+export default function PreviewResults({ preview, count, hasCredits, busy, defaultSelectedCodes, onSubmit }: Props) {
+  const [selected, setSelected] = useState<string[]>(
+    () => defaultSelectedCodes ?? preview.personas.map((p) => p.code),
+  );
 
   const distributions = useMemo(
     () => aggregateDistributions(preview.personas, selected, preview.questions),
@@ -38,19 +41,19 @@ export default function PreviewResults({ preview, count, hasCredits, busy, onSub
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       <Box>
         <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 0.5 }}>
-          Preview — predicted results
+          Podgląd — przewidywane wyniki
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Pick which respondent personas to include. The charts below show the predicted answer
-          distribution for the first {preview.questions.length} question
-          {preview.questions.length === 1 ? '' : 's'}. Nothing is submitted until you confirm.
+          Wybierz persony respondentów do uwzględnienia. Poniższe wykresy pokazują przewidywany
+          rozkład odpowiedzi dla pierwszych {preview.questions.length} pytań. Nic nie jest wysyłane
+          do momentu potwierdzenia.
         </Typography>
       </Box>
 
       {/* Personas */}
       <Box>
         <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 1 }}>
-          Personas
+          Persony
         </Typography>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 1 }}>
           {preview.personas.map((p) => (
@@ -96,11 +99,11 @@ export default function PreviewResults({ preview, count, hasCredits, busy, onSub
       {/* Distributions */}
       <Box>
         <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 1 }}>
-          Predicted answer distributions
+          Przewidywane rozkłady odpowiedzi
         </Typography>
         {noneSelected ? (
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            Select at least one persona to see predicted distributions.
+            Wybierz co najmniej jedną personę, aby zobaczyć przewidywane rozkłady.
           </Typography>
         ) : (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, mt: 1.5 }}>
@@ -110,7 +113,7 @@ export default function PreviewResults({ preview, count, hasCredits, busy, onSub
                   {d.label}
                   {d.skipped_percent > 0 && (
                     <Typography component="span" variant="caption" color="text.secondary">
-                      {' '}— {d.skipped_percent}% skip (routing)
+                      {' '}— {d.skipped_percent}% pomija (routing)
                     </Typography>
                   )}
                 </Typography>
@@ -154,12 +157,12 @@ export default function PreviewResults({ preview, count, hasCredits, busy, onSub
           onClick={() => onSubmit(selected)}
         >
           {hasCredits
-            ? `Generate & submit ${count} responses (${count} credits)`
-            : `Unlock & submit (${count} credits needed)`}
+            ? `Generuj i wyślij ${count} odpowiedzi (${count} kredytów)`
+            : `Odblokuj i wyślij (${count} kredytów potrzebne)`}
         </Button>
         {!hasCredits && (
           <Typography variant="body2" color="text.secondary">
-            You'll be redirected to checkout — your preview is saved.
+            Zostaniesz przekierowany do płatności — podgląd jest zapisany.
           </Typography>
         )}
       </Box>

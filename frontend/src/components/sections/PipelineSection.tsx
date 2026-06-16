@@ -32,6 +32,7 @@ interface Props {
   submitProgress: SubmitProgress | null;
   count: number;
   hasCredits: boolean;
+  defaultSelectedCodes?: string[] | null;
   onStart: (url: string, count: number, desirePrompt: string) => void;
   onSubmit: (selectedCodes: string[]) => void;
   onReset: () => void;
@@ -47,6 +48,7 @@ export default function PipelineSection({
   submitProgress,
   count,
   hasCredits,
+  defaultSelectedCodes,
   onStart,
   onSubmit,
   onReset,
@@ -64,7 +66,7 @@ export default function PipelineSection({
   return (
     <>
       <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 2 }}>
-        Run the pipeline
+        Rozpocznij proces
       </Typography>
       <Paper variant="outlined" sx={{ p: 3, mt: 1.5, mb: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
         {/* Input form — hidden once we have a preview to focus on */}
@@ -104,9 +106,9 @@ export default function PipelineSection({
               ? (() => {
                   const batchInfo =
                     submitProgress.totalBatches && submitProgress.totalBatches > 1
-                      ? `Batch ${submitProgress.batch}/${submitProgress.totalBatches} — `
+                      ? `Partia ${submitProgress.batch}/${submitProgress.totalBatches} — `
                       : '';
-                  return `${batchInfo}Submitting responses to Google Form — ${submitProgress.current}/${submitProgress.total}`;
+                  return `${batchInfo}Wysyłanie odpowiedzi do formularza Google — ${submitProgress.current}/${submitProgress.total}`;
                 })()
               : log[log.length - 1]}
           </Typography>
@@ -119,17 +121,18 @@ export default function PipelineSection({
             count={count}
             hasCredits={hasCredits}
             busy={busy}
+            defaultSelectedCodes={defaultSelectedCodes}
             onSubmit={onSubmit}
           />
         )}
 
         {/* Done */}
         {isDone && (
-          <Alert severity="success">Pipeline complete — all responses submitted successfully.</Alert>
+          <Alert severity="success">Przetwarzanie zakończone — wszystkie odpowiedzi zostały pomyślnie wysłane.</Alert>
         )}
 
         {/* Error */}
-        {isError && <Alert severity="error">{error ?? 'An unexpected error occurred.'}</Alert>}
+        {isError && <Alert severity="error">{error ?? 'Wystąpił nieoczekiwany błąd.'}</Alert>}
 
         {/* Controls */}
         {!isIdle && (
@@ -139,10 +142,10 @@ export default function PipelineSection({
               onClick={() => setReviewOpen(true)}
               disabled={Object.keys(results).length === 0}
             >
-              Review Details
+              Szczegóły
             </Button>
             <Button variant="outlined" color="error" onClick={onReset} disabled={busy}>
-              Start over
+              Zacznij od nowa
             </Button>
           </Box>
         )}
@@ -150,11 +153,11 @@ export default function PipelineSection({
 
       {/* Raw JSON dialog */}
       <Dialog open={reviewOpen} onClose={() => setReviewOpen(false)} maxWidth="md" fullWidth scroll="paper">
-        <DialogTitle>Step Details</DialogTitle>
+        <DialogTitle>Szczegóły</DialogTitle>
         <DialogContent dividers>
           {Object.keys(results).length === 0 ? (
             <Typography variant="body2" color="text.secondary">
-              No JSON results available yet.
+              Brak wyników JSON.
             </Typography>
           ) : (
             Object.entries(results).map(([key, data]) => (
@@ -187,7 +190,7 @@ export default function PipelineSection({
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setReviewOpen(false)}>Close</Button>
+          <Button onClick={() => setReviewOpen(false)}>Zamknij</Button>
         </DialogActions>
       </Dialog>
     </>

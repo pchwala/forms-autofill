@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import pathlib
 import threading
 import uuid
 from typing import AsyncGenerator, Callable
+
+logger = logging.getLogger(__name__)
 
 import firebase_admin
 import stripe
@@ -47,9 +50,9 @@ _APP_URL = os.getenv(
 )
 
 PACKS: dict[str, dict] = {
-    "small":  {"credits": 20,  "usd": 99,   "pln": 499},
-    "medium": {"credits": 100, "usd": 425,  "pln": 2125},
-    "large":  {"credits": 200, "usd": 750,  "pln": 3750},
+    "small":  {"credits": 20,  "pln": 499,  "price_id_pln": os.getenv("STRIPE_PRICE_ID_SMALL",  "price_1TisGhKEGI0EbMNbnbvPSCGl")},
+    "medium": {"credits": 100, "pln": 2125, "price_id_pln": os.getenv("STRIPE_PRICE_ID_MEDIUM", "price_1TisGhKEGI0EbMNbf1Pg7vN6")},
+    "large":  {"credits": 200, "pln": 3750, "price_id_pln": os.getenv("STRIPE_PRICE_ID_LARGE",  "price_1TisGgKEGI0EbMNbfGVqfN4B")},
 }
 
 app = FastAPI(title="Forms Autofill API")
@@ -145,7 +148,7 @@ def _make_job(loop: asyncio.AbstractEventLoop) -> tuple[str, asyncio.Queue, Call
 
 @app.get("/stream/{job_id}")
 async def stream(job_id: str, authorization: str | None = Header(default=None)):
-    user = _verify(authorization)
+    _verify(authorization)
     if job_id not in _jobs:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -344,6 +347,8 @@ async def get_pipeline_status(
         "status": doc.get("status"),
         "preview": doc.get("preview"),
         "total_responses": doc.get("total_responses"),
+        "form_title": doc.get("form_title"),
+        "selected_persona_codes": doc.get("selected_persona_codes"),
     }
 
 
@@ -367,7 +372,6 @@ async def billing_packs():
 
 class CheckoutRequest(BaseModel):
     pack: str
-    currency: str
     quantity: int = 1
 
 
@@ -381,33 +385,22 @@ async def billing_checkout(
 
     if req.pack not in PACKS:
         raise HTTPException(status_code=400, detail=f"Unknown pack: {req.pack}")
-    if req.currency not in ("usd", "pln"):
-        raise HTTPException(status_code=400, detail="currency must be 'usd' or 'pln'")
     if req.quantity < 1:
-        raise HTTPException(status_code=400, detail="quantity must be at least 1")
+        raise HTTPException(status_code=400, detail="Quantity must be at least 1")
 
     pack = PACKS[req.pack]
     total_credits = pack["credits"] * req.quantity
-    product_name = f"{pack['credits']} credits"
 
     try:
         session = stripe.checkout.Session.create(
             mode="payment",
-            line_items=[
-                {
-                    "price_data": {
-                        "currency": req.currency,
-                        "unit_amount": pack[req.currency],
-                        "product_data": {"name": product_name},
-                    },
-                    "quantity": req.quantity,
-                }
-            ],
+            line_items=[{"price": pack["price_id_pln"], "quantity": req.quantity}],
             metadata={"uid": uid, "credits": str(total_credits)},
             success_url=f"{_APP_URL}/?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{_APP_URL}/?checkout=cancel",
         )
     except stripe.StripeError as exc:
+        logger.error("Stripe error in /billing/checkout: %s", exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return {"url": session.url}
