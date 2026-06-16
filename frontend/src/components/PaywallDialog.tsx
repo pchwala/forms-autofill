@@ -87,7 +87,7 @@ export default function PaywallDialog({
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="sm" fullWidth>
       <DialogTitle sx={{ pr: 6 }}>
-        Odblokuj wysyłkę
+        Wybierz pakiet
         <IconButton
           onClick={onClose}
           disabled={busy}
@@ -130,7 +130,7 @@ export default function PaywallDialog({
                       {pack ? pack.credits : '—'}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      credits
+                      kredytów
                     </Typography>
                     <Typography variant="body2" sx={{ mt: 1 }}>
                       {pack ? formatPrice(pack.pln) : '—'}
