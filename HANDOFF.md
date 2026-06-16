@@ -1,14 +1,13 @@
 # Handoff — Anonymous Access + Preview/Paywall Product
 
-_Last updated: 2026-06-13. Branch: `feature`. Latest commit: `2f294d2`._
+_Last updated: 2026-06-16. Branch: `feature`._
 
-State of the pivot from a sign-in-gated, single-shot pipeline to an **anonymous,
-preview-then-pay** product. The pivot and a cleanup pass are done; the main remaining
-feature is **Stripe payments**. Read this first.
+State of the product after completing the Stripe payment integration and history
+resume/resubmit features. Read this first.
 
 ---
 
-## The product model (what we're building)
+## The product model
 
 1. **Anonymous access** — anyone can use the site without registering (Firebase
    Anonymous Auth; upgradeable to Google via `linkWithPopup`).
@@ -17,74 +16,108 @@ feature is **Stripe payments**. Read this first.
    **predicted answer distributions** for the first ≤10 option-based questions —
    computed *from the strategy JSON*, no paid generation call.
 3. **Desired-outcome prompt** — optional free-text field; injected into strategy
-   generation so it skews the personas/distributions the user reviews (outranks the
-   research-based defaults).
+   generation so it skews the personas/distributions the user reviews.
 4. **Paywall (credits)** — generating + submitting the real responses (steps 3–5)
-   consumes **1 credit**. Payment is still a **placeholder** (`POST /credits/grant`
-   grants credits with no real charge); Stripe is the next feature.
+   consumes credits equal to `total_responses`. Payment goes through **Stripe Checkout**
+   (PLN only). Three packs available; quantity multiplier supported.
 
 ### Locked decisions
-- Gating = **credits counter** (1 credit = 1 submit run). `CREDITS_PER_PURCHASE` env
-  controls grant size; single-vs-N-pack pricing is deferred.
+- Gating = **credits counter** (1 credit = 1 submitted response).
 - Unchecking personas **renormalizes** the selected personas' `count_percent` to 100%
   (total response count stays N).
 - Preview shows the **first ≤10 questions that have options**; free-text skipped.
-- **History is view-only** (read-only list of past runs). Resubmit-from-history was
-  intentionally dropped; if it returns it must be a proper credit-gated feature.
+- **History** shows `preview_ready` and `completed` entries with actionable buttons
+  (Resume / Resubmit); both are credit-gated via the normal submit flow.
 
 ---
 
 ## Current backend shape (`backend/main.py`)
 
-Only six routes remain after the cleanup pass — all legacy endpoints were removed:
+Ten routes:
 - `POST /preview` — free; extract+strategy, returns `{job_id, pipeline_id}`, emits a
   `preview` SSE result. No credit consumed.
-- `POST /pipelines/{id}/submit` — consumes a credit (**402** if none), generates +
-  shuffles + submits the selected personas, **refunds** the credit on failure.
-- `GET /user/status` → `{credits}`. `POST /credits/grant` — placeholder paywall.
-- `GET /stream/{job_id}` — SSE drain. `GET /history` — read-only list.
+- `POST /pipelines/{id}/submit` — consumes credits equal to `total_responses` (**402** if
+  insufficient), generates + shuffles + submits the selected personas. Credits are deducted
+  *after* submission (only for responses that confirmed).
+- `GET /pipelines/{id}` — restore a pipeline's preview/status from Firestore; used on
+  page reload, Stripe redirect return, and history resume/resubmit. Returns `status`,
+  `preview`, `total_responses`, `form_title`, `selected_persona_codes`.
+- `GET /user/status` → `{credits}`.
+- `GET /stream/{job_id}` — SSE drain.
+- `GET /history` — list of the user's pipelines (metadata only, no step data).
+- `GET /billing/packs` — returns the `PACKS` dict (no auth required).
+- `POST /billing/checkout` — creates a Stripe Checkout Session; accepts `{pack, quantity}`;
+  returns `{url}`. Redirects to Stripe Hosted Checkout.
+- `POST /webhook/stripe` — Stripe webhook; verifies signature; fulfills
+  `checkout.session.completed` by calling `add_credits` (idempotent).
+- `POST /billing/confirm` — on-return fallback; confirms a session and grants credits
+  idempotently (safe to call even if the webhook already ran).
 
-In-memory `_pipelines` dict bridges preview→submit; `_jobs` holds SSE queues.
-Firestore (`firestore_service.py`) persists `users/{uid}` (credits) and
-`pipelines/{pipeline_id}` (`step_form_config`/`step_strategy`/`step_responses`/
-`selected_persona_codes`, etc.). `get_pipeline` is kept for the upcoming Stripe resume.
+**Credit packs** (`PACKS` in `main.py`, PLN only, using Stripe Price IDs):
+| Pack   | Credits | PLN display | Stripe Price ID                     |
+|--------|---------|-------------|-------------------------------------|
+| small  | 20      | 4.99 zł     | price_1TisGhKEGI0EbMNbnbvPSCGl      |
+| medium | 100     | 21.25 zł    | price_1TisGhKEGI0EbMNbf1Pg7vN6      |
+| large  | 200     | 37.50 zł    | price_1TisGgKEGI0EbMNbfGVqfN4B      |
+
+**Firestore collections**: `users/{uid}` (credits balance), `pipelines/{pipeline_id}` (full
+pipeline doc including `step_form_config`, `step_strategy`, `preview`,
+`selected_persona_codes`, `status`, timestamps), `credit_grants/{session_id}` (idempotency
+log for Stripe fulfillment).
+
+---
+
+## Current frontend shape
+
+### Billing flow
+`PaywallDialog` → `POST /billing/checkout` → Stripe Hosted Checkout (PLN) →
+`/?checkout=success&session_id=...` → `POST /billing/confirm` → credits granted →
+preview restored from Firestore → submit auto-retried.
+
+`POST /webhook/stripe` runs in parallel as a reliability backstop (same idempotent grant).
+
+### History resume / resubmit
+`HistoryDialog` shows all pipelines. Actionable rows:
+- **`preview_ready`** → "Resume" button: calls `loadFromHistory(pipelineId)` in `usePipeline`,
+  restores preview state (personas all checked by default), closes dialog.
+- **`completed`** → "Resubmit" button (disabled if `credits < total_responses`): same call,
+  but `selected_persona_codes` from the previous run are pre-populated in `PreviewResults`.
+  User can adjust before submitting.
+
+### Key hooks / components
+- `usePipeline` (`hooks/usePipeline.ts`) — pipeline state machine. Public API:
+  `startPreview`, `submitResponses`, `restore` (from localStorage on reload/Stripe return),
+  `loadFromHistory` (by pipeline_id, for history actions), `reset`. Exposes
+  `defaultSelectedCodes` state for pre-populating persona selection from history.
+- `useBilling` (`hooks/useBilling.ts`) — `packs()`, `checkout(pack, quantity)`,
+  `confirm(sessionId)`.
+- `useCredits` (`hooks/useCredits.ts`) — polls `/user/status`, waits for auth to resolve.
+- `PaywallDialog` — 3 pack cards (PLN only, no currency toggle), quantity input,
+  redirects to Stripe.
+- `HistoryDialog` — fetches `/history`, shows status chips + Resume/Resubmit buttons.
+- `PreviewResults` — accepts optional `defaultSelectedCodes` prop to pre-select personas.
 
 ---
 
 ## What was done this session
 
-All committed on `feature`:
-
-- **Auth 401 fixed** — Anonymous sign-in was disabled in the Firebase console (now
-  enabled by the user). Also fixed a guaranteed cold-load 401: `useCredits` now takes
-  `(getToken, user, authLoading)` and waits for auth to resolve before calling
-  `/user/status` (`useCredits.ts`, `App.tsx`).
-- **Double Google popup fixed** (`useAuth.ts`) — on `auth/credential-already-in-use`,
-  reuse the credential via `signInWithCredential` instead of opening a second popup.
-- **Storage-partitioning prod fix** (`67a18da`) — prod `VITE_FIREBASE_AUTH_DOMAIN` now
-  points at the app's own custom domain `forms-autofill.pchwala.dev` (served by Firebase
-  Hosting at `/__/auth/`), making the auth iframe first-party. **Dev stays on
-  `firebaseapp.com`** — the custom-domain handler would break popup on localhost.
-- **favicon** — added `frontend/public/favicon.svg` + `<link rel="icon">`.
-- **Cleanup pass** (`2f294d2`):
-  - Removed all legacy endpoints (`/run`, `/session*`, `/result`, `/resubmit*`,
-    `/history/{id}`, `/history/{id}/resubmit`) + their request models, the `_sessions`
-    dict, and `run_pipeline`.
-  - Removed the **AI stub harness** (`backend/stub.py`, all `AI_SWITCH_STUB` wiring).
-  - Made **History view-only** (`HistoryDialog.tsx`, `App.tsx`).
-  - Fixed the MUI v9 `PipelineProgress.tsx` type error (`StepIconComponent` →
-    `slots={{ stepIcon }}`).
-
-Verified: backend imports clean, routes are exactly the six above, `tsc --noEmit` clean,
-`npm run build` passes.
+- **Stripe payments** — full integration:
+  - Backend: `PACKS` dict (PLN + Stripe Price IDs), `POST /billing/checkout` (uses
+    `price:` not `price_data:`), `POST /webhook/stripe` (idempotent fulfillment),
+    `POST /billing/confirm` (on-return fallback).
+  - Frontend: `PaywallDialog` (PLN only, no USD toggle), `useBilling` hook, Stripe
+    return handling in `App.tsx` (confirm → restore → auto-retry submit).
+- **History resume + resubmit** — `HistoryDialog` now has action buttons; `usePipeline`
+  gained `loadFromHistory` + `defaultSelectedCodes`; `PreviewResults` accepts
+  `defaultSelectedCodes` prop; `GET /pipelines/{id}` extended with `form_title` and
+  `selected_persona_codes`.
 
 ---
 
 ## What still needs to be done
 
 ### Prod auth config (manual — required before prod Google sign-in works)
-Because prod `authDomain` is now the custom domain, the OAuth handler must be authorized
-or sign-in fails with `redirect_uri_mismatch`:
+Prod `authDomain` points at the custom domain; the OAuth handler must be authorized:
 1. Firebase Console → Authentication → Settings → **Authorized domains**: ensure
    `forms-autofill.pchwala.dev` is listed.
 2. Google Cloud → APIs & Services → Credentials → the Web OAuth client:
@@ -92,35 +125,48 @@ or sign-in fails with `redirect_uri_mismatch`:
    `https://forms-autofill.pchwala.dev/__/auth/handler` to **redirect URIs**.
 3. Rebuild + `firebase deploy --only hosting`.
 
-### Stripe payments (the main remaining feature)
-- Replace `POST /credits/grant` (placeholder) with Stripe Checkout session creation +
-  a webhook that calls `add_credits`. Decide `CREDITS_PER_PURCHASE` / pricing.
-- **Resume across the Stripe redirect**: `_pipelines` is in-memory; Stripe redirects away
-  and may span a server restart, so submit must resume from **Firestore** (the step data
-  + `selected_persona_codes` are already persisted; `get_pipeline` reads them) rather than
-  relying on `_pipelines`.
+### Stripe webhook registration (required before payments work in prod)
+- Stripe Dashboard → Developers → Webhooks → Add endpoint:
+  - URL: `https://<your-backend>/webhook/stripe`
+  - Event: `checkout.session.completed`
+  - Copy the signing secret → `STRIPE_WEBHOOK_SECRET` in `backend/.env`
+- For **local dev**: `stripe listen --forward-to localhost:8000/webhook/stripe`
+  prints a local `whsec_...` to use as `STRIPE_WEBHOOK_SECRET`.
 
 ### Live testing (not exercisable offline)
 - End-to-end run against a **real public Google Form** (extraction + submission are real
-  network calls). The AI stub is gone, so this also spends real OpenAI tokens.
-- **Firestore credit transactions** (`consume_credit`/`add_credits`) against the real
+  network calls; requires a valid `OPENAI_API_KEY`).
+- **Firestore credit transactions** (`consume_credits`/`add_credits`) against the real
   project — logic is straightforward but untested live.
+- **Stripe test flow**: use card `4242 4242 4242 4242` through the full checkout →
+  confirm credits granted → submit auto-retried.
 
 ### Smaller / known
-- **Multi-process safety**: in-memory `_jobs`/`_pipelines` assume a single uvicorn worker;
-  a multi-worker deploy needs shared state (Firestore/Redis).
+- **Multi-process safety**: in-memory `_jobs` assumes a single uvicorn worker; a
+  multi-worker deploy needs shared state (Redis/Firestore).
 - Frontend bundle is >500 kB (single chunk) — code-splitting is a future nicety.
 
 ---
 
 ## Gotchas / things to know
-- **Dev mode** (`AUTH_DISABLED=true` + `VITE_AUTH_DISABLED=true`): `/user/status` and
-  `/credits/grant` return `credits: 999999`, submit never charges, no Firestore. Preview
-  math + orchestration are exercisable, but **form extraction, AI calls, and Google
-  submission all hit the network** (a valid `OPENAI_API_KEY` is required — the stub that
-  used to avoid this is gone).
-- The **desire prompt** affects the preview because it's injected at strategy time (step 2);
-  generation then samples from the already-skewed personas, so submissions stay faithful.
-- Secrets: `backend/.env` (live `OPENAI_API_KEY`) and `backend/firebase_credentials.json`
-  are both gitignored. Keep them out of commits.
-- Run the backend from the **repo root** as a package: `uvicorn backend.main:app --reload`.
+
+- **`backend/.env` required vars**:
+  ```
+  OPENAI_API_KEY=sk-...
+  FIREBASE_CREDENTIALS_JSON=./firebase_credentials.json
+  CORS_ORIGINS=http://localhost:5173
+  APP_URL=http://localhost:5173          # used for Stripe success/cancel redirect URLs
+  STRIPE_SECRET_KEY=sk_test_...
+  STRIPE_WEBHOOK_SECRET=whsec_...
+  ```
+- **Stripe Price IDs are test-mode IDs** — swap for live-mode IDs before going to prod.
+  The `PACKS` dict in `backend/main.py` is the only place to change them.
+- **`selected_persona_codes`** is set on a pipeline only after the first successful submit.
+  For `preview_ready` pipelines, it's `null` in Firestore; `loadFromHistory` returns
+  `null` → `PreviewResults` defaults to all personas checked.
+- **Idempotent credit grants** — `credit_grants/{session_id}` prevents double-fulfillment
+  from webhook retries + the on-return confirm call running simultaneously.
+- Secrets: `backend/.env` and `backend/firebase_credentials.json` are both gitignored.
+- Run the backend from the **repo root**: `uvicorn backend.main:app --reload`.
+- Dev Firebase auth domain stays on `firebaseapp.com`; prod uses the custom domain
+  `forms-autofill.pchwala.dev` — do not change the dev env var.
