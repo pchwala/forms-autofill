@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import pathlib
 import threading
 import uuid
 from typing import AsyncGenerator, Callable
+
+logger = logging.getLogger(__name__)
 
 import firebase_admin
 import stripe
@@ -47,9 +50,9 @@ _APP_URL = os.getenv(
 )
 
 PACKS: dict[str, dict] = {
-    "small":  {"credits": 20,  "pln": 499,  "price_id_pln": "price_1TisGhKEGI0EbMNbnbvPSCGl"},
-    "medium": {"credits": 100, "pln": 2125, "price_id_pln": "price_1TisGhKEGI0EbMNbf1Pg7vN6"},
-    "large":  {"credits": 200, "pln": 3750, "price_id_pln": "price_1TisGgKEGI0EbMNbfGVqfN4B"},
+    "small":  {"credits": 20,  "pln": 499,  "price_id_pln": os.getenv("STRIPE_PRICE_ID_SMALL",  "price_1TisGhKEGI0EbMNbnbvPSCGl")},
+    "medium": {"credits": 100, "pln": 2125, "price_id_pln": os.getenv("STRIPE_PRICE_ID_MEDIUM", "price_1TisGhKEGI0EbMNbf1Pg7vN6")},
+    "large":  {"credits": 200, "pln": 3750, "price_id_pln": os.getenv("STRIPE_PRICE_ID_LARGE",  "price_1TisGgKEGI0EbMNbfGVqfN4B")},
 }
 
 app = FastAPI(title="Forms Autofill API")
@@ -397,6 +400,7 @@ async def billing_checkout(
             cancel_url=f"{_APP_URL}/?checkout=cancel",
         )
     except stripe.StripeError as exc:
+        logger.error("Stripe error in /billing/checkout: %s", exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return {"url": session.url}
