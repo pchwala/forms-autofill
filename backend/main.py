@@ -47,9 +47,9 @@ _APP_URL = os.getenv(
 )
 
 PACKS: dict[str, dict] = {
-    "small":  {"credits": 20,  "pln": 499,  "price_id_pln": "price_1TirsbGTTvSZKTeSsQa8CVxY"},
-    "medium": {"credits": 100, "pln": 2125, "price_id_pln": "price_1Tirt0GTTvSZKTeSxt6KKgz1"},
-    "large":  {"credits": 200, "pln": 3750, "price_id_pln": "price_1TirtMGTTvSZKTeSF4l8chEg"},
+    "small":  {"credits": 20,  "pln": 499,  "price_id_pln": "price_1TisGhKEGI0EbMNbnbvPSCGl"},
+    "medium": {"credits": 100, "pln": 2125, "price_id_pln": "price_1TisGhKEGI0EbMNbf1Pg7vN6"},
+    "large":  {"credits": 200, "pln": 3750, "price_id_pln": "price_1TisGgKEGI0EbMNbfGVqfN4B"},
 }
 
 app = FastAPI(title="Forms Autofill API")
