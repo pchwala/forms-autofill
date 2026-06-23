@@ -30,6 +30,37 @@ class FormFiller:
         self._scale_questions: set[str] = {
             q["id"] for q in questions if q["type"] == "scale"
         }
+        # Valid option strings per question, used to snap AI-generated answers
+        # back to the exact text Google Forms expects (a single mismatch makes
+        # Google reject the entire submission with HTTP 400).
+        self._options: dict[str, list[str]] = {
+            q["id"]: q.get("options", []) for q in questions
+        }
+
+    @staticmethod
+    def _match_option(value: str, options: list[str]) -> str:
+        """Snap *value* to the exact option string when it is a near-miss.
+
+        The AI occasionally abbreviates an option (e.g. "Student" for
+        "Uczeń / Student"). Tries exact match, then case/whitespace-insensitive
+        match, then an unambiguous substring match. Returns *value* unchanged when
+        there is no options list or no confident match (so the mismatch stays
+        visible rather than being silently mis-mapped).
+        """
+        if not options or value in options:
+            return value
+        norm = value.strip().casefold()
+        for opt in options:
+            if opt.strip().casefold() == norm:
+                return opt
+        if norm:
+            candidates = [
+                opt for opt in options
+                if norm in opt.strip().casefold() or opt.strip().casefold() in norm
+            ]
+            if len(candidates) == 1:
+                return candidates[0]
+        return value
 
     def submit(self, session: requests.Session, response: dict) -> None:
         """Build form payload and POST it to the formResponse endpoint.
@@ -49,14 +80,15 @@ class FormFiller:
             if value is None:
                 continue
 
+            options = self._options.get(qid, [])
             if qid in self._checkbox_questions:
                 # Each selected option is a separate field with the same key.
                 for option in value:
-                    payload.append((entry_key, option))
+                    payload.append((entry_key, self._match_option(str(option), options)))
             elif qid in self._scale_questions:
                 payload.append((entry_key, str(int(value))))
             else:
-                payload.append((entry_key, str(value)))
+                payload.append((entry_key, self._match_option(str(value), options)))
 
         # Standard hidden fields that Google Forms includes in every submission.
         fbzx = random.randint(-(2**63), 2**63 - 1)
@@ -81,7 +113,10 @@ class FormFiller:
 
         # A successful submission lands on the formResponse confirmation page, OR
         # on viewform?edit_requested=true when the form allows response editing.
-        is_confirmed = (
+        # A rejected submission (e.g. an answer that doesn't match any valid option)
+        # is re-rendered at the SAME formResponse URL but with an HTTP 4xx status, so
+        # the status code — not the URL — is the reliable signal of acceptance.
+        is_confirmed = resp.ok and (
             "formResponse" in resp.url
             or "edit_requested=true" in resp.url
         )
