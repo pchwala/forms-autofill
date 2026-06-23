@@ -39,6 +39,16 @@ def _slugify(title: str, max_len: int = 24) -> str:
     return slug[:max_len] or "form"
 
 
+def extract_form_id(form_url: str) -> str | None:
+    """Return the Google Form id from a resolved /viewform URL, or None.
+
+    Handles both the editor URL shape (/forms/d/{id}/) and the published response shape
+    (/forms/d/e/{id}/). This is a stable identifier for caching per-form work.
+    """
+    m = re.search(r"/forms/d/(?:e/)?([^/]+)", form_url)
+    return m.group(1) if m else None
+
+
 def _next_config_path(data_dir: pathlib.Path, form_title: str) -> tuple[pathlib.Path, str]:
     """Return (path, base_name) for the next available config file based on form title slug.
 

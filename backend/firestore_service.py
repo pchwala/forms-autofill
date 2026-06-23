@@ -219,3 +219,52 @@ def get_pipeline(pipeline_id: str, uid: str) -> dict | None:
         return None
     d["pipeline_id"] = doc.id
     return d
+
+
+# ---------------------------------------------------------------------------
+# Per-form research + strategy cache (global, shared across users)
+# ---------------------------------------------------------------------------
+
+# Bump to invalidate every cached strategy (e.g. after a prompt/schema change).
+STRATEGY_CACHE_VERSION = 1
+
+
+def get_cached_strategy(cache_key: str) -> dict | None:
+    """Return the cached {strategy, research_basis, research_analysis} for a form, or None.
+
+    The cache is global (one research + persona generation per form + desire_prompt), so the
+    expensive GPT pipeline runs only the first time a given form is processed. A version
+    mismatch is treated as a miss so a bumped ``STRATEGY_CACHE_VERSION`` forces regeneration.
+    """
+    doc = _client().collection("form_strategies").document(cache_key).get()
+    if not doc.exists:
+        return None
+    d = doc.to_dict() or {}
+    if d.get("version") != STRATEGY_CACHE_VERSION:
+        return None
+    return d
+
+
+def save_cached_strategy(
+    cache_key: str,
+    *,
+    form_id: str,
+    form_url: str,
+    desire_prompt: str | None,
+    strategy: object,
+    research_basis: object,
+    research_analysis: object,
+) -> None:
+    """Store the research + strategy output for a form so later runs can skip the GPT calls."""
+    _client().collection("form_strategies").document(cache_key).set(
+        {
+            "form_id": form_id,
+            "form_url": form_url,
+            "desire_prompt": desire_prompt,
+            "strategy": strategy,
+            "research_basis": research_basis,
+            "research_analysis": research_analysis,
+            "version": STRATEGY_CACHE_VERSION,
+            "created_at": datetime.now(tz=timezone.utc),
+        }
+    )

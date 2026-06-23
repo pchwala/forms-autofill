@@ -297,7 +297,7 @@ class ResponseGenerator:
             )
             print(msg)
             if emit:
-                emit({"type": "message", "text": f"Generating {count} responses for persona {code} — {name}"})
+                emit({"type": "message", "text": f"Generowanie {count} odpowiedzi dla persony {code} — {name}"})
             completion = self._client.chat.completions.create(
                 model=model,
                 response_format={"type": "json_object"},
@@ -307,7 +307,7 @@ class ResponseGenerator:
                 ],
             )
             batch = json.loads(completion.choices[0].message.content)["responses"]
-            msg2 = f"  Got {len(batch)} responses."
+            msg2 = f"  Otrzymano {len(batch)} odpowiedzi."
             print(msg2)
             if emit:
                 emit({"type": "message", "text": msg2})
