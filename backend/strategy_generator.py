@@ -58,6 +58,14 @@ def _build_question_summary(questions: list, routing: list) -> str:
         )
         lines.append(f"  {q['id']}: {q['label']}")
         lines.append(f"    Type: {q['type']}, Options: {opts}{note}")
+
+    if any(q.get("type") == "grid_row" for q in questions):
+        lines.append("")
+        lines.append(
+            "NOTE: 'grid_row' questions are individual rows of a matrix/grid question "
+            "that share a common rating scale. Treat each row as its own single-select "
+            "question, but rate the rows of one grid coherently relative to each other."
+        )
     return "\n".join(lines)
 
 

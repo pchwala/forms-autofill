@@ -46,6 +46,9 @@ export function aggregateDistributions(
         percent: Math.round((optPct.get(opt) ?? 0) * 10) / 10,
       })),
       skipped_percent: skippedPercent,
+      grid_id: q.grid_id,
+      grid_label: q.grid_label,
+      row_label: q.row_label,
     };
   });
 }

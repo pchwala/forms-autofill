@@ -7,8 +7,74 @@ import Divider from '@mui/material/Divider';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import LinearProgress from '@mui/material/LinearProgress';
 import Typography from '@mui/material/Typography';
-import type { PreviewData } from '../hooks/usePipeline';
+import type { PreviewData, PreviewDistribution } from '../hooks/usePipeline';
 import { aggregateDistributions } from '../utils/distributions';
+
+/** A grid header followed by its rows, or a single standalone question. */
+type DistGroup =
+  | { kind: 'single'; dist: PreviewDistribution }
+  | { kind: 'grid'; gridId: string; gridLabel: string; rows: PreviewDistribution[] };
+
+/** Collapse consecutive grid_row distributions (same grid_id) into one group. */
+function groupDistributions(distributions: PreviewDistribution[]): DistGroup[] {
+  const groups: DistGroup[] = [];
+  for (const d of distributions) {
+    if (d.grid_id) {
+      const last = groups[groups.length - 1];
+      if (last && last.kind === 'grid' && last.gridId === d.grid_id) {
+        last.rows.push(d);
+      } else {
+        groups.push({
+          kind: 'grid',
+          gridId: d.grid_id,
+          gridLabel: d.grid_label ?? d.label,
+          rows: [d],
+        });
+      }
+    } else {
+      groups.push({ kind: 'single', dist: d });
+    }
+  }
+  return groups;
+}
+
+function OptionBars({ options }: { options: PreviewDistribution['options'] }) {
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+      {options.map((o) => (
+        <Box key={o.option} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography
+            variant="caption"
+            sx={{ width: 160, flexShrink: 0, color: 'text.secondary' }}
+            noWrap
+            title={o.option}
+          >
+            {o.option}
+          </Typography>
+          <Box sx={{ flexGrow: 1 }}>
+            <LinearProgress
+              variant="determinate"
+              value={Math.min(100, o.percent)}
+              sx={{ height: 8, borderRadius: 1 }}
+            />
+          </Box>
+          <Typography variant="caption" sx={{ width: 44, textAlign: 'right' }}>
+            {o.percent}%
+          </Typography>
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
+function SkippedNote({ percent }: { percent: number }) {
+  if (percent <= 0) return null;
+  return (
+    <Typography component="span" variant="caption" color="text.secondary">
+      {' '}— {percent}% pomija (routing)
+    </Typography>
+  );
+}
 
 interface Props {
   preview: PreviewData;
@@ -107,42 +173,46 @@ export default function PreviewResults({ preview, count, hasCredits, busy, defau
           </Typography>
         ) : (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, mt: 1.5 }}>
-            {distributions.map((d) => (
-              <Box key={d.id}>
-                <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.75 }}>
-                  {d.label}
-                  {d.skipped_percent > 0 && (
-                    <Typography component="span" variant="caption" color="text.secondary">
-                      {' '}— {d.skipped_percent}% pomija (routing)
-                    </Typography>
-                  )}
-                </Typography>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-                  {d.options.map((o) => (
-                    <Box key={o.option} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Typography
-                        variant="caption"
-                        sx={{ width: 160, flexShrink: 0, color: 'text.secondary' }}
-                        noWrap
-                        title={o.option}
-                      >
-                        {o.option}
-                      </Typography>
-                      <Box sx={{ flexGrow: 1 }}>
-                        <LinearProgress
-                          variant="determinate"
-                          value={Math.min(100, o.percent)}
-                          sx={{ height: 8, borderRadius: 1 }}
-                        />
+            {groupDistributions(distributions).map((group) =>
+              group.kind === 'grid' ? (
+                <Box key={group.gridId}>
+                  <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
+                    {group.gridLabel}
+                  </Typography>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 1.5,
+                      pl: 1.5,
+                      borderLeft: 2,
+                      borderColor: 'divider',
+                    }}
+                  >
+                    {group.rows.map((d) => (
+                      <Box key={d.id}>
+                        <Typography
+                          variant="caption"
+                          sx={{ fontWeight: 600, display: 'block', mb: 0.5 }}
+                        >
+                          {d.row_label ?? d.label}
+                          <SkippedNote percent={d.skipped_percent} />
+                        </Typography>
+                        <OptionBars options={d.options} />
                       </Box>
-                      <Typography variant="caption" sx={{ width: 44, textAlign: 'right' }}>
-                        {o.percent}%
-                      </Typography>
-                    </Box>
-                  ))}
+                    ))}
+                  </Box>
                 </Box>
-              </Box>
-            ))}
+              ) : (
+                <Box key={group.dist.id}>
+                  <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.75 }}>
+                    {group.dist.label}
+                    <SkippedNote percent={group.dist.skipped_percent} />
+                  </Typography>
+                  <OptionBars options={group.dist.options} />
+                </Box>
+              ),
+            )}
           </Box>
         )}
       </Box>

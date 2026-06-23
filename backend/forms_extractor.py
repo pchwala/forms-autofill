@@ -20,7 +20,7 @@ GOOGLE_TYPE_MAP: dict[int, str] = {
     3: "dropdown",  # Dropdown
     4: "checkbox",  # Checkboxes
     5: "scale",     # Linear scale
-    7: "grid",      # Multiple choice grid (skipped — needs special handling)
+    7: "grid",      # Multiple choice grid — expanded into one grid_row question per row
     9: "date",      # Date
     10: "time",     # Time
 }
@@ -30,6 +30,9 @@ FREE_TEXT_TYPES = {"text", "textarea", "date", "time"}
 
 # Google Forms internal type_id for section/page dividers.
 _SECTION_TYPE = 8
+
+# Google Forms internal type_id for the multiple-choice grid.
+_GRID_TYPE = 7
 
 
 def _slugify(title: str, max_len: int = 24) -> str:
@@ -105,6 +108,92 @@ def _derive_response_url(form_url: str) -> str:
     # Strip query string and fragment before replacing the path suffix.
     base = form_url.split("?")[0].split("#")[0]
     return base.replace("viewform", "formResponse")
+
+
+def _grid_is_checkbox(response_groups: list) -> bool:
+    """True if a grid's rows allow multiple selections (checkbox grid).
+
+    Each grid row group ends with a one-element list encoding the cell type:
+    ``[0]`` for radio (single choice per row), ``[1]`` for checkbox (multi-select).
+    Only radio grids are supported; checkbox grids are skipped by the caller.
+    """
+    for group in response_groups:
+        tail = group[-1] if isinstance(group, list) and group else None
+        if isinstance(tail, list) and tail and tail[0] == 1:
+            return True
+    return False
+
+
+def _emit_grid_rows(
+    item: list,
+    page_id: str,
+    grid_index: int,
+    q_index: int,
+    questions: list[dict],
+    q_ids_in_page: list[str],
+) -> int:
+    """Expand a grid item into one single-select question per row.
+
+    Each row becomes a ``{"type": "grid_row"}`` question with its own ``entry_id``
+    and the grid's columns as ``options``, tagged with ``grid_id``/``grid_label``/
+    ``row_label`` so the UI can regroup the rows under one grid header. Rows are
+    appended to *questions*/*q_ids_in_page* in place; the updated ``q_index`` is
+    returned. Checkbox grids (multi-select per row) are skipped.
+    """
+    grid_label = str(item[1]) if item[1] else ""
+    response_groups: list = (
+        item[4] if len(item) > 4 and isinstance(item[4], list) else []
+    )
+    if not response_groups:
+        return q_index
+
+    if _grid_is_checkbox(response_groups):
+        print(f"  Skipping checkbox grid (multi-select not supported): {grid_label!r}")
+        return q_index
+
+    # Columns are identical across rows; read them once from the first row group.
+    first = response_groups[0]
+    raw_columns: list = (
+        first[1]
+        if isinstance(first, list) and len(first) > 1 and isinstance(first[1], list)
+        else []
+    )
+    columns = [
+        str(c[0]) for c in raw_columns if isinstance(c, list) and c and c[0] is not None
+    ]
+    if not columns:
+        return q_index
+
+    grid_id = f"G{grid_index}"
+
+    for row_num, group in enumerate(response_groups, 1):
+        if not isinstance(group, list) or len(group) < 1:
+            continue
+        row_entry = group[0]
+        row_label = ""
+        if len(group) > 3 and isinstance(group[3], list) and group[3] and group[3][0]:
+            row_label = str(group[3][0])
+        if not row_label:
+            row_label = f"Wiersz {row_num}"
+        required_flag = bool(group[2]) if len(group) > 2 and group[2] else False
+
+        q_id = f"Q{q_index}"
+        questions.append({
+            "id": q_id,
+            "label": f"{grid_label} – {row_label}",
+            "entry_id": f"entry.{row_entry}",
+            "type": "grid_row",
+            "required": required_flag,
+            "page": page_id,
+            "options": columns,
+            "grid_id": grid_id,
+            "grid_label": grid_label,
+            "row_label": row_label,
+        })
+        q_ids_in_page.append(q_id)
+        q_index += 1
+
+    return q_index
 
 
 def _extract_structure(
@@ -191,6 +280,7 @@ def _extract_structure(
     questions: list[dict] = []
     routing: list[dict] = []
     q_index = 1
+    grid_index = 1
 
     for page_idx, (sec_info, items) in enumerate(raw_pages):
         page_id = f"page_{page_idx + 1}"
@@ -199,7 +289,16 @@ def _extract_structure(
         for item in items:
             type_id: int = item[3]
             config_type = GOOGLE_TYPE_MAP.get(type_id)
-            if config_type is None or config_type == "grid":
+            if config_type is None:
+                continue
+
+            # Grids expand into one single-select "grid_row" question per row, each
+            # with its own entry_id; downstream stages treat them like radios.
+            if config_type == "grid":
+                q_index = _emit_grid_rows(
+                    item, page_id, grid_index, q_index, questions, q_ids_in_page
+                )
+                grid_index += 1
                 continue
 
             response_groups: list = (

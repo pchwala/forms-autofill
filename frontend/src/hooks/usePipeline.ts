@@ -24,6 +24,10 @@ export interface PreviewDistribution {
   type: string;
   options: { option: string; percent: number }[];
   skipped_percent: number;
+  /** Set for grid_row questions: groups rows belonging to the same grid. */
+  grid_id?: string | null;
+  grid_label?: string | null;
+  row_label?: string | null;
 }
 
 export interface PreviewPersona {
@@ -39,6 +43,10 @@ export interface PreviewQuestion {
   type: string;
   options: string[];
   per_persona: Record<string, Record<string, number> | null>;
+  /** Set for grid_row questions: groups rows belonging to the same grid. */
+  grid_id?: string | null;
+  grid_label?: string | null;
+  row_label?: string | null;
 }
 
 export interface PreviewData {
