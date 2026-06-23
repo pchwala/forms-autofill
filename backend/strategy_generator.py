@@ -278,6 +278,15 @@ LANGUAGE: Write all descriptive text values (abstract, key_findings text) in Pol
         config = self._config
         q_summary = _build_question_summary(config["questions"], config.get("routing", []))
         routing_json = json.dumps(config.get("routing", []), ensure_ascii=False, indent=2)
+        all_qids = [q["id"] for q in config["questions"]]
+        # Dynamic schema stub so the model produces one entry per question, no matter
+        # how many there are (grids expand into many grid_row questions).
+        qd_template = ",\n".join(
+            f'    "{qid}": {{"<exact option text>": <integer percent>, ...}}'
+            if i == 0
+            else f'    "{qid}": {{}}'
+            for i, qid in enumerate(all_qids)
+        )
 
         prompt = f"""You are a survey methodology expert. Using the research papers and the \
 survey structure below, create a statistically grounded distribution plan for generating \
@@ -293,50 +302,22 @@ ROUTING RULES:
 {routing_json}
 
 Instructions:
-1. For every question assign a realistic percentage distribution over its options, \
-grounded in the research.
-   - Questions Q1–Q6 cover ALL 100% of respondents.
+1. Assign a realistic percentage distribution over its options to EVERY question, \
+grounded in the research. There are {len(all_qids)} questions ({all_qids[0]} through \
+{all_qids[-1]}); you MUST include an entry for every one of them — do not stop early or \
+omit any, including all grid_row questions.
+   - Questions answered by ALL respondents cover 100% of respondents.
    - Questions marked "[may be null — routing skips this]" cover only the respondents who see them.
    - Every distribution MUST sum to exactly 100.
 2. Propose 3 to 5 distinct persona archetypes whose weighted mix reproduces these distributions.
    - All persona count_percent values MUST sum to exactly 100.
-3. Identify 3 to 7 important correlations between questions \
-(e.g., higher education → higher awareness on Q13).
+3. Identify 3 to 7 important correlations between questions.
 
 Return ONLY a JSON object with this schema (no markdown, no explanation):
 {{
   "topic_summary": "2-3 sentences describing what the research tells us about this population",
-  "demographic_distribution": {{
-    "Q1": {{"<exact option text>": <integer percent>, ...}},
-    "Q2": {{}},
-    "Q3": {{}},
-    "Q4": {{}},
-    "Q5": {{}},
-    "Q6": {{}}
-  }},
   "question_distributions": {{
-    "Q7": {{"<exact option text>": <integer percent>, ...}},
-    "Q8": {{}},
-    "Q9": {{}},
-    "Q10": {{}},
-    "Q11": {{}},
-    "Q12": {{}},
-    "Q13": {{}},
-    "Q14": {{}},
-    "Q15": {{}},
-    "Q16": {{}},
-    "Q17": {{}},
-    "Q18": {{}},
-    "Q19": {{}},
-    "Q20": {{}},
-    "Q21": {{}},
-    "Q22": {{}},
-    "Q23": {{}},
-    "Q24": {{}},
-    "Q25": {{}},
-    "Q26": {{}},
-    "Q27": {{}},
-    "Q28": {{}}
+{qd_template}
   }},
   "suggested_personas": [
     {{
@@ -344,7 +325,7 @@ Return ONLY a JSON object with this schema (no markdown, no explanation):
       "description": "2-3 sentence description of this archetype's profile and behaviors",
       "count_percent": <integer>,
       "archetype_traits": ["trait 1", "trait 2", "trait 3"],
-      "routing_answer": "<exact Q6 option text>"
+      "routing_answer": "<exact option text for the routing question if the form has routing rules above, otherwise null>"
     }}
   ],
   "correlation_rules": [
@@ -378,6 +359,8 @@ LANGUAGE: Write all descriptive text values (topic_summary, persona name, person
     def _step3_compile(self, research_basis: dict, research_analysis: dict) -> dict:
         config = self._config
         q_summary = _build_question_summary(config["questions"], config.get("routing", []))
+        all_qids = [q["id"] for q in config["questions"]]
+        has_routing = bool(config.get("routing"))
 
         prompt = f"""You are a survey methodology expert. Using the research basis and \
 analysis below, compile a complete JSON strategy for generating realistic synthetic survey \
@@ -394,24 +377,26 @@ SURVEY QUESTIONS (type and all valid option strings):
 
 Instructions:
 1. Flesh out each suggested persona into a complete persona entry with code (A, B, C, …), \
-name, count_percent, description, and routing (exact Q6 answer text).
+name, count_percent, description{", and routing (exact answer text for the routing question)" if has_routing else ""}.
 2. For each persona assign:
-   - fixed_attributes: questions where this persona ALWAYS gives the same single answer.
-     Typically Q1 (gender), Q2 (city size), Q4 (education) if stable for this archetype.
-     Also include Q6 here (the routing question).
+   - fixed_attributes: questions where this persona ALWAYS gives the same single answer \
+(typically stable demographic questions for this archetype){", plus the routing question" if has_routing else ""}.
    - weighted_answers: every other applicable non-fixed question, with exact option \
 strings as keys and integer weights that sum to exactly 100 per question.
+   - COMPLETENESS (critical): across fixed_attributes + weighted_answers, EVERY persona \
+MUST cover EVERY one of the {len(all_qids)} questions ({all_qids[0]} through {all_qids[-1]}), \
+including all grid_row questions — except questions skipped by routing for that persona. \
+Do not omit any question or stop early.
 3. Questions SKIPPED by routing for a persona MUST NOT appear in fixed_attributes or \
 weighted_answers (they will be submitted as null).
 4. All persona count_percent values MUST sum to exactly 100.
 5. When aggregated by count_percent, persona distributions should approximate the \
-demographic_distribution and question_distributions from the analysis.
+question_distributions from the analysis.
 
 Return ONLY a JSON object with this schema (no markdown, no explanation):
 {{
   "research_basis": [ ...copy from research basis... ],
   "topic_summary": "...",
-  "demographic_distribution": {{ ...copy from analysis... }},
   "question_distributions": {{ ...copy from analysis... }},
   "personas": [
     {{
@@ -419,7 +404,6 @@ Return ONLY a JSON object with this schema (no markdown, no explanation):
       "name": "persona name",
       "count_percent": <integer>,
       "description": "description",
-      "routing": "<exact Q6 option text>",
       "fixed_attributes": {{
         "<question_id>": "<exact option text>"
       }},
