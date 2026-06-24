@@ -3,21 +3,21 @@ import type { User } from 'firebase/auth';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
-export interface CreditsState {
-  credits: number;
+export interface TokensState {
+  tokens: number;
   loading: boolean;
   refresh: () => Promise<void>;
 }
 
-export function useCredits(
+export function useTokens(
   getToken: () => Promise<string>,
   user: User | null,
   authLoading: boolean,
-): CreditsState {
-  const [credits, setCredits] = useState(0);
+): TokensState {
+  const [tokens, setTokens] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  const fetchCredits = useCallback(async () => {
+  const fetchTokens = useCallback(async () => {
     setLoading(true);
     try {
       const token = await getToken();
@@ -25,8 +25,8 @@ export function useCredits(
       if (token) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch(`${API_URL}/user/status`, { headers });
       if (res.ok) {
-        const data = (await res.json()) as { credits: number };
-        setCredits(data.credits ?? 0);
+        const data = (await res.json()) as { tokens: number };
+        setTokens(data.tokens ?? 0);
       }
     } finally {
       setLoading(false);
@@ -43,8 +43,8 @@ export function useCredits(
       setLoading(false);
       return;
     }
-    void fetchCredits();
-  }, [fetchCredits, user, authLoading]);
+    void fetchTokens();
+  }, [fetchTokens, user, authLoading]);
 
-  return { credits, loading, refresh: fetchCredits };
+  return { tokens, loading, refresh: fetchTokens };
 }

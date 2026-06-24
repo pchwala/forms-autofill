@@ -79,13 +79,13 @@ function SkippedNote({ percent }: { percent: number }) {
 interface Props {
   preview: PreviewData;
   count: number;
-  hasCredits: boolean;
+  hasTokens: boolean;
   busy?: boolean;
   defaultSelectedCodes?: string[] | null;
   onSubmit: (selectedCodes: string[]) => void;
 }
 
-export default function PreviewResults({ preview, count, hasCredits, busy, defaultSelectedCodes, onSubmit }: Props) {
+export default function PreviewResults({ preview, count, hasTokens, busy, defaultSelectedCodes, onSubmit }: Props) {
   const [selected, setSelected] = useState<string[]>(
     () => defaultSelectedCodes ?? preview.personas.map((p) => p.code),
   );
@@ -226,11 +226,11 @@ export default function PreviewResults({ preview, count, hasCredits, busy, defau
           disabled={noneSelected || busy}
           onClick={() => onSubmit(selected)}
         >
-          {hasCredits
-            ? `Generuj i wyślij ${count} odpowiedzi (${count} kredytów)`
-            : `Odblokuj i wyślij (${count} kredytów potrzebne)`}
+          {hasTokens
+            ? `Generuj i wyślij ${count} odpowiedzi (${count} tokenów)`
+            : `Odblokuj i wyślij (${count} tokenów potrzebne)`}
         </Button>
-        {!hasCredits && (
+        {!hasTokens && (
           <Typography variant="body2" color="text.secondary">
             Zostaniesz przekierowany do płatności — podgląd jest zapisany.
           </Typography>

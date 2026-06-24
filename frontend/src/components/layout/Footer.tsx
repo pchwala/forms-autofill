@@ -23,7 +23,9 @@ export default function Footer() {
         </Typography>
       </Box>
       <Typography variant="caption" color="text.disabled">
-        © 2026 Przemek Chwała
+        <Link href="mailto:info@pchwala.dev" underline="hover" color="inherit">
+          info@pchwala.dev
+        </Link>
       </Typography>
     </Box>
   );

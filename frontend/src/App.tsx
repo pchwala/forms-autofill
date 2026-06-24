@@ -14,12 +14,12 @@ import PaywallDialog from './components/PaywallDialog';
 import AuthGuard from './components/AuthGuard';
 import { usePipeline } from './hooks/usePipeline';
 import { useAuth } from './hooks/useAuth';
-import { useCredits } from './hooks/useCredits';
+import { useTokens } from './hooks/useTokens';
 import { useBilling } from './hooks/useBilling';
 
 export default function App() {
   const { getToken, user, loading: authLoading, isAnonymous, signInWithGoogle, signOut } = useAuth();
-  const { credits, refresh: refreshCredits } = useCredits(getToken, user, authLoading);
+  const { tokens, refresh: refreshTokens } = useTokens(getToken, user, authLoading);
   const { confirm } = useBilling(getToken);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [paywallOpen, setPaywallOpen] = useState(false);
@@ -43,7 +43,7 @@ export default function App() {
     setStatus,
   } = usePipeline(getToken);
 
-  const hasCredits = credits > 0;
+  const hasTokens = tokens > 0;
 
   // After auth resolves, restore an in-flight preview and handle Stripe return params.
   const restoredRef = useRef(false);
@@ -68,13 +68,13 @@ export default function App() {
         try {
           await confirm(sessionId);
         } catch {
-          // Non-fatal: credits may already have been granted by the webhook.
+          // Non-fatal: tokens may already have been granted by the webhook.
         }
-        await refreshCredits();
+        await refreshTokens();
         const pending = await restore();
         if (pending) {
           setCount(pending.count);
-          // Auto-retry submit if we now have enough credits.
+          // Auto-retry submit if we now have enough tokens.
           if (pending.selectedCodes && pending.selectedCodes.length > 0) {
             void runSubmit(pending.selectedCodes);
           }
@@ -106,18 +106,18 @@ export default function App() {
     try {
       const ok = await submitResponses(codes, count);
       if (!ok) {
-        // Raced out of credits — fall back to the paywall.
+        // Raced out of tokens — fall back to the paywall.
         setPendingCodes(codes);
         setPaywallOpen(true);
       }
-      void refreshCredits();
+      void refreshTokens();
     } catch {
       // error state already set inside the hook
     }
   }
 
   function handleSubmit(codes: string[]) {
-    if (hasCredits) {
+    if (hasTokens) {
       void runSubmit(codes);
     } else {
       setPendingCodes(codes);
@@ -148,7 +148,7 @@ export default function App() {
           <Navbar
             user={user}
             isAnonymous={isAnonymous}
-            credits={credits}
+            tokens={tokens}
             onSignIn={() => void signInWithGoogle()}
             onSignOut={() => void signOut()}
             onHistory={() => setHistoryOpen(true)}
@@ -157,7 +157,7 @@ export default function App() {
             open={historyOpen}
             onClose={() => setHistoryOpen(false)}
             getToken={getToken}
-            credits={credits}
+            tokens={tokens}
             onResume={(id) => void handleLoadFromHistory(id)}
             onResubmit={(id) => void handleLoadFromHistory(id)}
           />
@@ -165,8 +165,8 @@ export default function App() {
             open={paywallOpen}
             getToken={getToken}
             onClose={handlePaywallClose}
-            creditsNeeded={count}
-            creditsHeld={credits}
+            tokensNeeded={count}
+            tokensHeld={tokens}
           />
           <Container maxWidth="lg" sx={{ py: 6 }}>
             <HeroSection />
@@ -180,7 +180,7 @@ export default function App() {
               preview={preview}
               submitProgress={submitProgress}
               count={count}
-              hasCredits={hasCredits}
+              hasTokens={hasTokens}
               defaultSelectedCodes={defaultSelectedCodes}
               onStart={handleStart}
               onSubmit={handleSubmit}

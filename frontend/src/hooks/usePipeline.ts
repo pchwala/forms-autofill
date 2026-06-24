@@ -10,7 +10,7 @@ export type PipelineStatus =
   | 'submitting' // paid phase: generating + submitting responses
   | 'done'
   | 'error'
-  | 'blocked';   // no credits — paywall
+  | 'blocked';   // no tokens — paywall
 
 export interface StepInfo {
   label: string;

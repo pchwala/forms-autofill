@@ -150,7 +150,7 @@ def step5_submit(
     """Submit responses (looping in batches when total_responses exceeds the unique count).
 
     Returns the number of responses that were confirmed as submitted — this is what the
-    user is charged for (1 credit per confirmed submission).
+    user is charged for (1 token per confirmed submission).
     """
     total_batches = math.ceil(total_responses / len(responses))
     emit({

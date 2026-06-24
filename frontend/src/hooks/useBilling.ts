@@ -1,7 +1,7 @@
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
 export interface Pack {
-  credits: number;
+  tokens: number;
   pln: number;
 }
 
@@ -38,8 +38,8 @@ export function useBilling(getToken: () => Promise<string>) {
       body: JSON.stringify({ session_id: sessionId }),
     });
     if (!res.ok) throw new Error(`Confirm failed: ${res.status}`);
-    const data = (await res.json()) as { credits: number };
-    return data.credits;
+    const data = (await res.json()) as { tokens: number };
+    return data.tokens;
   }
 
   return { packs, checkout, confirm };

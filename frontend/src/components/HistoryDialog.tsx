@@ -29,7 +29,7 @@ interface Props {
   open: boolean;
   onClose: () => void;
   getToken: () => Promise<string>;
-  credits: number;
+  tokens: number;
   onResume: (pipelineId: string) => void;
   onResubmit: (pipelineId: string) => void;
 }
@@ -47,7 +47,7 @@ const STATUS_CHIP: Record<string, { label: string; color: 'success' | 'error' | 
   submitting:   { label: 'Wysyłanie',     color: 'warning' },
 };
 
-export default function HistoryDialog({ open, onClose, getToken, credits, onResume, onResubmit }: Props) {
+export default function HistoryDialog({ open, onClose, getToken, tokens, onResume, onResubmit }: Props) {
   const [records, setRecords] = useState<PipelineRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,7 +104,7 @@ export default function HistoryDialog({ open, onClose, getToken, credits, onResu
               const chip = STATUS_CHIP[record.status] ?? { label: record.status, color: 'warning' as const };
               const canResume = record.status === 'preview_ready';
               const canResubmit = record.status === 'completed';
-              const hasEnoughCredits = credits >= record.total_responses;
+              const hasEnoughTokens = tokens >= record.total_responses;
 
               return (
                 <ListItem
@@ -132,8 +132,8 @@ export default function HistoryDialog({ open, onClose, getToken, credits, onResu
                       <Button
                         size="small"
                         variant="outlined"
-                        disabled={!hasEnoughCredits}
-                        title={!hasEnoughCredits ? `Potrzeba ${record.total_responses} kredytów` : undefined}
+                        disabled={!hasEnoughTokens}
+                        title={!hasEnoughTokens ? `Potrzeba ${record.total_responses} tokenów` : undefined}
                         onClick={() => { onResubmit(record.pipeline_id); onClose(); }}
                       >
                         Wyślij ponownie

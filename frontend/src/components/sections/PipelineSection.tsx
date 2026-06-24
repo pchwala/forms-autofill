@@ -31,7 +31,7 @@ interface Props {
   preview: PreviewData | null;
   submitProgress: SubmitProgress | null;
   count: number;
-  hasCredits: boolean;
+  hasTokens: boolean;
   defaultSelectedCodes?: string[] | null;
   onStart: (url: string, count: number, desirePrompt: string) => void;
   onSubmit: (selectedCodes: string[]) => void;
@@ -47,7 +47,7 @@ export default function PipelineSection({
   preview,
   submitProgress,
   count,
-  hasCredits,
+  hasTokens,
   defaultSelectedCodes,
   onStart,
   onSubmit,
@@ -119,7 +119,7 @@ export default function PipelineSection({
           <PreviewResults
             preview={preview}
             count={count}
-            hasCredits={hasCredits}
+            hasTokens={hasTokens}
             busy={busy}
             defaultSelectedCodes={defaultSelectedCodes}
             onSubmit={onSubmit}

@@ -20,10 +20,10 @@ const PACK_LABELS: Record<PackKey, string> = {
   large: 'Duży',
 };
 
-function plCredits(n: number): string {
-  if (n === 1) return 'kredyt';
-  if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) return 'kredyty';
-  return 'kredytów';
+function plTokens(n: number): string {
+  if (n === 1) return 'token';
+  if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) return 'tokeny';
+  return 'tokenów';
 }
 
 const PACK_ORDER: PackKey[] = ['small', 'medium', 'large'];
@@ -38,16 +38,16 @@ interface Props {
   open: boolean;
   getToken: () => Promise<string>;
   onClose: () => void;
-  creditsNeeded: number;
-  creditsHeld: number;
+  tokensNeeded: number;
+  tokensHeld: number;
 }
 
 export default function PaywallDialog({
   open,
   getToken,
   onClose,
-  creditsNeeded,
-  creditsHeld,
+  tokensNeeded,
+  tokensHeld,
 }: Props) {
   const { packs, checkout } = useBilling(getToken);
 
@@ -77,8 +77,8 @@ export default function PaywallDialog({
     }
   }
 
-  const selectedCredits = packData ? packData[selectedPack].credits * quantity : 0;
-  const still_short = creditsNeeded > creditsHeld + selectedCredits;
+  const selectedTokens = packData ? packData[selectedPack].tokens * quantity : 0;
+  const still_short = tokensNeeded > tokensHeld + selectedTokens;
 
   function formatPrice(cents: number): string {
     return `${(cents / 100).toFixed(2).replace('.', ',')} zł`;
@@ -100,8 +100,8 @@ export default function PaywallDialog({
 
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 3, pb: 3 }}>
         <Typography variant="body2" color="text.secondary">
-          Masz <strong>{creditsHeld}</strong> {plCredits(creditsHeld)} · potrzebujesz{' '}
-          <strong>{creditsNeeded}</strong> do wysyłki
+          Masz <strong>{tokensHeld}</strong> {plTokens(tokensHeld)} · potrzebujesz{' '}
+          <strong>{tokensNeeded}</strong> do wysyłki
         </Typography>
 
         {/* Pack cards */}
@@ -127,10 +127,10 @@ export default function PaywallDialog({
                       {PACK_LABELS[key]}
                     </Typography>
                     <Typography variant="h6" fontWeight={700} sx={{ my: 0.5 }}>
-                      {pack ? pack.credits : '—'}
+                      {pack ? pack.tokens : '—'}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      kredytów
+                      tokenów
                     </Typography>
                     <Typography variant="body2" sx={{ mt: 1 }}>
                       {pack ? formatPrice(pack.pln) : '—'}
@@ -158,11 +158,11 @@ export default function PaywallDialog({
           />
           {packData && (
             <Typography variant="body2" color="text.secondary">
-              = {selectedCredits} {plCredits(selectedCredits)} ·{' '}
+              = {selectedTokens} {plTokens(selectedTokens)} ·{' '}
               {formatPrice(packData[selectedPack].pln * quantity)}
               {still_short && (
                 <Typography component="span" variant="body2" color="warning.main">
-                  {' '}(brak jeszcze {creditsNeeded - creditsHeld - selectedCredits})
+                  {' '}(brak jeszcze {tokensNeeded - tokensHeld - selectedTokens})
                 </Typography>
               )}
             </Typography>

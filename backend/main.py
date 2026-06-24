@@ -20,12 +20,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 
 from .firestore_service import (
-    add_credits,
+    add_tokens,
     complete_pipeline,
-    consume_credits,
+    consume_tokens,
     create_pipeline,
     fail_pipeline,
-    get_credits,
+    get_tokens,
     get_or_create_user,
     get_pipeline,
     get_user_pipelines,
@@ -50,9 +50,9 @@ _APP_URL = os.getenv(
 )
 
 PACKS: dict[str, dict] = {
-    "small":  {"credits": 20,  "pln": 499,  "price_id_pln": os.getenv("STRIPE_PRICE_ID_SMALL",  "price_1TisGhKEGI0EbMNbnbvPSCGl")},
-    "medium": {"credits": 100, "pln": 2125, "price_id_pln": os.getenv("STRIPE_PRICE_ID_MEDIUM", "price_1TisGhKEGI0EbMNbf1Pg7vN6")},
-    "large":  {"credits": 200, "pln": 3750, "price_id_pln": os.getenv("STRIPE_PRICE_ID_LARGE",  "price_1TisGgKEGI0EbMNbfGVqfN4B")},
+    "small":  {"tokens": 20,  "pln": 499,  "price_id_pln": os.getenv("STRIPE_PRICE_ID_SMALL",  "price_1TisGhKEGI0EbMNbnbvPSCGl")},
+    "medium": {"tokens": 100, "pln": 2125, "price_id_pln": os.getenv("STRIPE_PRICE_ID_MEDIUM", "price_1TisGhKEGI0EbMNbf1Pg7vN6")},
+    "large":  {"tokens": 200, "pln": 3750, "price_id_pln": os.getenv("STRIPE_PRICE_ID_LARGE",  "price_1TisGgKEGI0EbMNbfGVqfN4B")},
 }
 
 app = FastAPI(title="Forms Autofill API")
@@ -95,7 +95,7 @@ firebase_admin.initialize_app(_cred)
 fb_firestore.client()  # Validate Firestore connection at startup
 
 # _jobs holds the SSE queue for a *live* run only. It is intentionally in-memory: a dead
-# process means a dead run, and credits are charged after submission (so no money rides on
+# process means a dead run, and tokens are charged after submission (so no money rides on
 # it). It is never the source of truth for pipeline state.
 _jobs: dict[str, dict] = {}
 
@@ -232,7 +232,7 @@ class SubmitRequest(BaseModel):
 @app.post("/preview")
 async def preview(req: PreviewRequest, authorization: str | None = Header(default=None)):
     """Free phase: extract the form + generate a strategy, then return the predicted
-    persona mix and answer distributions. No credit is consumed."""
+    persona mix and answer distributions. No token is consumed."""
     user = _verify(authorization)
     uid, email = user["uid"], user["email"]
     get_or_create_user(uid, email)
@@ -283,8 +283,8 @@ async def submit_pipeline(
     authorization: str | None = Header(default=None),
 ):
     """Paid phase: generate + shuffle + submit responses for the selected personas, then
-    charge 1 credit per confirmed submission. Returns 402 when the balance can't cover the
-    requested response count. Credits are deducted *after* submission, so nothing is consumed
+    charge 1 token per confirmed submission. Returns 402 when the balance can't cover the
+    requested response count. Tokens are deducted *after* submission, so nothing is consumed
     (and nothing needs refunding) if the run fails."""
     user = _verify(authorization)
     uid = user["uid"]
@@ -293,10 +293,10 @@ async def submit_pipeline(
     if record is None or record.get("status") == "in_progress":
         raise HTTPException(status_code=404, detail="Pipeline not found or not ready")
 
-    # 1 credit = 1 submitted response. Require enough balance up front; the actual charge
+    # 1 token = 1 submitted response. Require enough balance up front; the actual charge
     # (successful submissions only) is applied by the worker once the run completes.
-    if get_credits(uid) < req.total_responses:
-        raise HTTPException(status_code=402, detail="Insufficient credits; payment required")
+    if get_tokens(uid) < req.total_responses:
+        raise HTTPException(status_code=402, detail="Insufficient tokens; payment required")
 
     form_config = record["form_config"]
 
@@ -320,7 +320,7 @@ async def submit_pipeline(
             )
             shuffled = step4_shuffle(responses, emit)
             succeeded = step5_submit(form_config, shuffled, req.total_responses, emit)
-            consume_credits(uid, succeeded)  # charge only confirmed submissions
+            consume_tokens(uid, succeeded)  # charge only confirmed submissions
             complete_pipeline(pipeline_id)
             emit({"type": "done", "total": succeeded, "pipeline_id": pipeline_id})
         except Exception as exc:
@@ -358,15 +358,15 @@ async def get_pipeline_status(
 
 
 async def _fulfill_checkout(session: dict) -> None:
-    """Grant credits for a completed Stripe Checkout session (idempotent)."""
+    """Grant tokens for a completed Stripe Checkout session (idempotent)."""
     uid = session["metadata"]["uid"]
-    credits = int(session["metadata"]["credits"])
-    add_credits(uid, credits, idempotency_key=session["id"])
+    tokens = int(session["metadata"]["credits"])
+    add_tokens(uid, tokens, idempotency_key=session["id"])
 
 
 @app.get("/billing/packs")
 async def billing_packs():
-    """Return available credit packs (no auth required)."""
+    """Return available token packs (no auth required)."""
     return PACKS
 
 
@@ -389,14 +389,14 @@ async def billing_checkout(
         raise HTTPException(status_code=400, detail="Quantity must be at least 1")
 
     pack = PACKS[req.pack]
-    total_credits = pack["credits"] * req.quantity
+    total_tokens = pack["tokens"] * req.quantity
 
     try:
         session = stripe.checkout.Session.create(
             mode="payment",
             locale="pl",
             line_items=[{"price": pack["price_id_pln"], "quantity": req.quantity}],
-            metadata={"uid": uid, "credits": str(total_credits)},
+            metadata={"uid": uid, "credits": str(total_tokens)},
             success_url=f"{_APP_URL}/?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{_APP_URL}/?checkout=cancel",
         )
@@ -434,7 +434,7 @@ class ConfirmRequest(BaseModel):
 async def billing_confirm(
     req: ConfirmRequest, authorization: str | None = Header(default=None)
 ):
-    """On-return fallback: confirm a Stripe session and grant credits if paid.
+    """On-return fallback: confirm a Stripe session and grant tokens if paid.
 
     Called by the frontend when returning from Stripe Checkout, so fulfillment
     doesn't depend on the webhook arriving first. Idempotent — safe to call even
@@ -451,4 +451,4 @@ async def billing_confirm(
     if session.get("payment_status") == "paid" and session.get("metadata", {}).get("uid") == uid:
         await _fulfill_checkout(session)
 
-    return {"credits": get_credits(uid)}
+    return {"tokens": get_tokens(uid)}
