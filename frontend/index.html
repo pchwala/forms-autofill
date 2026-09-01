@@ -3,12 +3,79 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <title>Forms Autofill</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <title>Service discontinued</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg: #111418;
+        --paper: #1a1f26;
+        --text: #e8eaed;
+        --muted: #9aa0a6;
+        --divider: rgba(255, 255, 255, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Roboto, sans-serif;
+        line-height: 1.7;
+      }
+
+      main {
+        width: 100%;
+        max-width: 480px;
+        padding: 40px;
+        border: 1px solid var(--divider);
+        border-radius: 6px;
+        background: var(--paper);
+      }
+
+      h1 {
+        margin: 0 0 16px;
+        font-size: 1.5rem;
+        font-weight: 600;
+        line-height: 1.35;
+      }
+
+      p {
+        margin: 0 0 12px;
+        color: var(--muted);
+        font-weight: 300;
+      }
+
+      p:last-child {
+        margin-bottom: 0;
+      }
+
+      @media (max-width: 480px) {
+        main {
+          padding: 28px 24px;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <main>
+      <h1>This service has been discontinued.</h1>
+      <p>Forms Autofill is no longer available and is not being maintained.</p>
+      <p>There is no replacement, and the service will not be coming back.</p>
+    </main>
   </body>
 </html>
