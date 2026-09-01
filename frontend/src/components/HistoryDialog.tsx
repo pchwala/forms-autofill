@@ -29,7 +29,7 @@ interface Props {
   open: boolean;
   onClose: () => void;
   getToken: () => Promise<string>;
-  credits: number;
+  tokens: number;
   onResume: (pipelineId: string) => void;
   onResubmit: (pipelineId: string) => void;
 }
@@ -40,14 +40,14 @@ function formatDate(iso: string): string {
 }
 
 const STATUS_CHIP: Record<string, { label: string; color: 'success' | 'error' | 'warning' | 'info' }> = {
-  completed:    { label: 'Completed',    color: 'success' },
-  failed:       { label: 'Failed',       color: 'error' },
-  in_progress:  { label: 'In progress',  color: 'warning' },
-  preview_ready:{ label: 'Preview ready',color: 'info' },
-  submitting:   { label: 'Submitting',   color: 'warning' },
+  completed:    { label: 'Ukończone',      color: 'success' },
+  failed:       { label: 'Błąd',          color: 'error' },
+  in_progress:  { label: 'W trakcie',     color: 'warning' },
+  preview_ready:{ label: 'Podgląd gotowy',color: 'info' },
+  submitting:   { label: 'Wysyłanie',     color: 'warning' },
 };
 
-export default function HistoryDialog({ open, onClose, getToken, credits, onResume, onResubmit }: Props) {
+export default function HistoryDialog({ open, onClose, getToken, tokens, onResume, onResubmit }: Props) {
   const [records, setRecords] = useState<PipelineRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,7 +64,7 @@ export default function HistoryDialog({ open, onClose, getToken, credits, onResu
         })
       )
       .then((res) => {
-        if (!res.ok) throw new Error(`Failed to load history: ${res.status}`);
+        if (!res.ok) throw new Error(`Błąd ładowania historii: ${res.status}`);
         return res.json() as Promise<PipelineRecord[]>;
       })
       .then((data) => {
@@ -79,7 +79,7 @@ export default function HistoryDialog({ open, onClose, getToken, credits, onResu
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>History</DialogTitle>
+      <DialogTitle>Historia</DialogTitle>
       <DialogContent dividers sx={{ p: 0 }}>
         {loading && (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
@@ -94,7 +94,7 @@ export default function HistoryDialog({ open, onClose, getToken, credits, onResu
         {!loading && !error && records.length === 0 && (
           <Box sx={{ p: 3, textAlign: 'center' }}>
             <Typography variant="body2" color="text.secondary">
-              No history yet. Complete a pipeline run to see it here.
+              Brak historii. Rozpocznij proces, aby zobaczyć go tutaj.
             </Typography>
           </Box>
         )}
@@ -104,7 +104,7 @@ export default function HistoryDialog({ open, onClose, getToken, credits, onResu
               const chip = STATUS_CHIP[record.status] ?? { label: record.status, color: 'warning' as const };
               const canResume = record.status === 'preview_ready';
               const canResubmit = record.status === 'completed';
-              const hasEnoughCredits = credits >= record.total_responses;
+              const hasEnoughTokens = tokens >= record.total_responses;
 
               return (
                 <ListItem
@@ -125,18 +125,18 @@ export default function HistoryDialog({ open, onClose, getToken, credits, onResu
                         variant="outlined"
                         onClick={() => { onResume(record.pipeline_id); onClose(); }}
                       >
-                        Resume
+                        Wznów
                       </Button>
                     )}
                     {canResubmit && (
                       <Button
                         size="small"
                         variant="outlined"
-                        disabled={!hasEnoughCredits}
-                        title={!hasEnoughCredits ? `Need ${record.total_responses} credits` : undefined}
+                        disabled={!hasEnoughTokens}
+                        title={!hasEnoughTokens ? `Potrzeba ${record.total_responses} tokenów` : undefined}
                         onClick={() => { onResubmit(record.pipeline_id); onClose(); }}
                       >
-                        Resubmit
+                        Wyślij ponownie
                       </Button>
                     )}
                   </Box>
@@ -147,7 +147,7 @@ export default function HistoryDialog({ open, onClose, getToken, credits, onResu
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Close</Button>
+        <Button onClick={onClose}>Zamknij</Button>
       </DialogActions>
     </Dialog>
   );

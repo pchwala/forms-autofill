@@ -47,7 +47,7 @@ export function useAuth(): AuthState {
     return unsubscribe;
   }, []);
 
-  // Upgrade an anonymous account to Google (keeps the same uid/credits), or sign in
+  // Upgrade an anonymous account to Google (keeps the same uid/tokens), or sign in
   // with Google directly if there's no anonymous session to link.
   const signInWithGoogle = useCallback(async () => {
     if (!auth || !googleProvider) return;

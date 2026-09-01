@@ -12,7 +12,7 @@ from __future__ import annotations
 import copy
 
 # Question types that have discrete options worth charting in the preview.
-OPTION_TYPES = {"radio", "checkbox", "dropdown", "scale"}
+OPTION_TYPES = {"radio", "checkbox", "dropdown", "scale", "grid_row"}
 
 PREVIEW_QUESTION_LIMIT = 10
 
@@ -86,6 +86,9 @@ def aggregate_distributions(
                     for opt in options
                 ],
                 "skipped_percent": skipped_percent,
+                "grid_id": q.get("grid_id"),
+                "grid_label": q.get("grid_label"),
+                "row_label": q.get("row_label"),
             }
         )
     return result
@@ -115,6 +118,9 @@ def compute_preview(strategy: dict, config: dict) -> dict:
                 "type": q["type"],
                 "options": q.get("options", []),
                 "per_persona": per_persona,
+                "grid_id": q.get("grid_id"),
+                "grid_label": q.get("grid_label"),
+                "row_label": q.get("row_label"),
             }
         )
 

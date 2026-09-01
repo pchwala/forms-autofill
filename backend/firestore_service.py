@@ -15,7 +15,7 @@ def _client():
 
 
 def get_or_create_user(uid: str, email: str) -> None:
-    """Create users/{uid} doc if it doesn't exist; never overwrites the credits balance."""
+    """Create users/{uid} doc if it doesn't exist; never overwrites the token balance."""
     ref = _client().collection("users").document(uid)
     doc = ref.get()
     if doc.exists:
@@ -30,21 +30,21 @@ def get_or_create_user(uid: str, email: str) -> None:
         )
 
 
-def get_credits(uid: str) -> int:
-    """Return the user's current credit balance (0 if no record)."""
+def get_tokens(uid: str) -> int:
+    """Return the user's current token balance (0 if no record)."""
     doc = _client().collection("users").document(uid).get()
     if not doc.exists:
         return 0
     return int(doc.to_dict().get("credits", 0))
 
 
-def add_credits(uid: str, n: int, idempotency_key: str | None = None) -> int:
-    """Add n credits to the user (creating the field if missing); return the new balance.
+def add_tokens(uid: str, n: int, idempotency_key: str | None = None) -> int:
+    """Add n tokens to the user (creating the field if missing); return the new balance.
 
     Used by the Stripe webhook + confirm endpoints. When ``idempotency_key`` is given
     (e.g. a Stripe Checkout session id), the grant is recorded in
     ``credit_grants/{idempotency_key}`` inside the same transaction; a repeated call with
-    the same key is a no-op that returns the already-credited balance. This makes webhook
+    the same key is a no-op that returns the already-granted balance. This makes webhook
     retries and the on-return confirm call safe to run more than once.
     """
     user_ref = _client().collection("users").document(uid)
@@ -81,8 +81,8 @@ def add_credits(uid: str, n: int, idempotency_key: str | None = None) -> int:
     return _txn(_client().transaction())
 
 
-def consume_credits(uid: str, n: int) -> int:
-    """Atomically deduct up to n credits; return the number actually deducted.
+def consume_tokens(uid: str, n: int) -> int:
+    """Atomically deduct up to n tokens; return the number actually deducted.
 
     Charging happens after a submit run, so n is the count of responses that confirmed
     (already pre-checked to be <= balance). Deducting ``min(current, n)`` guards against a
@@ -105,8 +105,8 @@ def consume_credits(uid: str, n: int) -> int:
 
 
 def get_user_status(uid: str) -> dict[str, int]:
-    """Return the user's credit balance."""
-    return {"credits": get_credits(uid)}
+    """Return the user's token balance."""
+    return {"tokens": get_tokens(uid)}
 
 
 # ---------------------------------------------------------------------------
@@ -219,3 +219,52 @@ def get_pipeline(pipeline_id: str, uid: str) -> dict | None:
         return None
     d["pipeline_id"] = doc.id
     return d
+
+
+# ---------------------------------------------------------------------------
+# Per-form research + strategy cache (global, shared across users)
+# ---------------------------------------------------------------------------
+
+# Bump to invalidate every cached strategy (e.g. after a prompt/schema change).
+STRATEGY_CACHE_VERSION = 1
+
+
+def get_cached_strategy(cache_key: str) -> dict | None:
+    """Return the cached {strategy, research_basis, research_analysis} for a form, or None.
+
+    The cache is global (one research + persona generation per form + desire_prompt), so the
+    expensive GPT pipeline runs only the first time a given form is processed. A version
+    mismatch is treated as a miss so a bumped ``STRATEGY_CACHE_VERSION`` forces regeneration.
+    """
+    doc = _client().collection("form_strategies").document(cache_key).get()
+    if not doc.exists:
+        return None
+    d = doc.to_dict() or {}
+    if d.get("version") != STRATEGY_CACHE_VERSION:
+        return None
+    return d
+
+
+def save_cached_strategy(
+    cache_key: str,
+    *,
+    form_id: str,
+    form_url: str,
+    desire_prompt: str | None,
+    strategy: object,
+    research_basis: object,
+    research_analysis: object,
+) -> None:
+    """Store the research + strategy output for a form so later runs can skip the GPT calls."""
+    _client().collection("form_strategies").document(cache_key).set(
+        {
+            "form_id": form_id,
+            "form_url": form_url,
+            "desire_prompt": desire_prompt,
+            "strategy": strategy,
+            "research_basis": research_basis,
+            "research_analysis": research_analysis,
+            "version": STRATEGY_CACHE_VERSION,
+            "created_at": datetime.now(tz=timezone.utc),
+        }
+    )

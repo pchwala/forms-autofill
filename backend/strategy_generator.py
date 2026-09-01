@@ -58,6 +58,14 @@ def _build_question_summary(questions: list, routing: list) -> str:
         )
         lines.append(f"  {q['id']}: {q['label']}")
         lines.append(f"    Type: {q['type']}, Options: {opts}{note}")
+
+    if any(q.get("type") == "grid_row" for q in questions):
+        lines.append("")
+        lines.append(
+            "NOTE: 'grid_row' questions are individual rows of a matrix/grid question "
+            "that share a common rating scale. Treat each row as its own single-select "
+            "question, but rate the rows of one grid coherently relative to each other."
+        )
     return "\n".join(lines)
 
 
@@ -139,7 +147,7 @@ class StrategyGenerator:
     ) -> pathlib.Path:
         # ── Step 1: Web search ──────────────────────────────────────────
         if start_step <= 1:
-            msg = "Step 1/3 — Searching the web for research papers"
+            msg = "Krok 1/3 — Wyszukiwanie artykułów badawczych"
             print(msg)
             if emit:
                 emit({"type": "message", "text": msg})
@@ -149,7 +157,7 @@ class StrategyGenerator:
                 json.dumps(research_basis, indent=2, ensure_ascii=False), encoding="utf-8"
             )
             n = len(research_basis.get("research_basis", []))
-            msg2 = f"  Found {n} paper(s)."
+            msg2 = f"  Znaleziono {n} artykuł(ów)."
             print(msg2 + f" Saved → {rb_path}")
             if emit:
                 emit({"type": "message", "text": msg2})
@@ -157,14 +165,14 @@ class StrategyGenerator:
             rb_path = self._research_basis_path()
             research_basis = json.loads(rb_path.read_text(encoding="utf-8"))
             n = len(research_basis.get("research_basis", []))
-            msg = f"Step 1/3 — Skipped (loaded {n} paper(s) from {rb_path})"
+            msg = f"Krok 1/3 — Pominięto (załadowano {n} artykuł(ów) z {rb_path})"
             print(msg)
             if emit:
                 emit({"type": "message", "text": msg})
 
         # ── Step 2: Analysis ────────────────────────────────────────────
         if start_step <= 2:
-            msg = "Step 2/3 — Analyzing papers, building distributions and persona archetypes"
+            msg = "Krok 2/3 — Analizowanie artykułów, budowanie rozkładów i archetypów person"
             print(msg)
             if emit:
                 emit({"type": "message", "text": msg})
@@ -174,7 +182,7 @@ class StrategyGenerator:
                 json.dumps(research_analysis, indent=2, ensure_ascii=False), encoding="utf-8"
             )
             np_ = len(research_analysis.get("suggested_personas", []))
-            msg2 = f"  Created {np_} persona archetype(s)."
+            msg2 = f"  Utworzono {np_} archetyp(ów) person."
             print(msg2 + f" Saved → {ra_path}")
             if emit:
                 emit({"type": "message", "text": msg2})
@@ -182,13 +190,13 @@ class StrategyGenerator:
             ra_path = self._research_analysis_path()
             research_analysis = json.loads(ra_path.read_text(encoding="utf-8"))
             np_ = len(research_analysis.get("suggested_personas", []))
-            msg = f"Step 2/3 — Skipped (loaded {np_} archetype(s) from {ra_path})"
+            msg = f"Krok 2/3 — Pominięto (załadowano {np_} archetyp(ów) z {ra_path})"
             print(msg)
             if emit:
                 emit({"type": "message", "text": msg})
 
         # ── Step 3: Compile final strategy ──────────────────────────────
-        msg = "Step 3/3 — Compiling personas and final strategy"
+        msg = "Krok 3/3 — Kompilowanie person i finalnej strategii"
         print(msg)
         if emit:
             emit({"type": "message", "text": msg})
@@ -199,7 +207,7 @@ class StrategyGenerator:
             json.dumps(strategy, indent=2, ensure_ascii=False), encoding="utf-8"
         )
         np_ = len(strategy.get("personas", []))
-        msg2 = f"  Compiled {np_} persona(s)."
+        msg2 = f"  Skompilowano {np_} person."
         print(msg2 + f" Saved → {dest}")
         print(
             f'\nDone! Set "strategy_file": "{dest}" in your form_config, '
@@ -251,7 +259,9 @@ Return ONLY a JSON object matching this schema exactly (no markdown, no explanat
       "applicable_questions": ["Q9", "Q14"]
     }}
   ]
-}}"""
+}}
+
+LANGUAGE: Write all descriptive text values (abstract, key_findings text) in Polish (język polski). JSON field names and question IDs MUST remain exactly as given."""
 
         response = self._client.responses.create(
             model=self._model,
@@ -268,6 +278,15 @@ Return ONLY a JSON object matching this schema exactly (no markdown, no explanat
         config = self._config
         q_summary = _build_question_summary(config["questions"], config.get("routing", []))
         routing_json = json.dumps(config.get("routing", []), ensure_ascii=False, indent=2)
+        all_qids = [q["id"] for q in config["questions"]]
+        # Dynamic schema stub so the model produces one entry per question, no matter
+        # how many there are (grids expand into many grid_row questions).
+        qd_template = ",\n".join(
+            f'    "{qid}": {{"<exact option text>": <integer percent>, ...}}'
+            if i == 0
+            else f'    "{qid}": {{}}'
+            for i, qid in enumerate(all_qids)
+        )
 
         prompt = f"""You are a survey methodology expert. Using the research papers and the \
 survey structure below, create a statistically grounded distribution plan for generating \
@@ -283,50 +302,22 @@ ROUTING RULES:
 {routing_json}
 
 Instructions:
-1. For every question assign a realistic percentage distribution over its options, \
-grounded in the research.
-   - Questions Q1–Q6 cover ALL 100% of respondents.
+1. Assign a realistic percentage distribution over its options to EVERY question, \
+grounded in the research. There are {len(all_qids)} questions ({all_qids[0]} through \
+{all_qids[-1]}); you MUST include an entry for every one of them — do not stop early or \
+omit any, including all grid_row questions.
+   - Questions answered by ALL respondents cover 100% of respondents.
    - Questions marked "[may be null — routing skips this]" cover only the respondents who see them.
    - Every distribution MUST sum to exactly 100.
 2. Propose 3 to 5 distinct persona archetypes whose weighted mix reproduces these distributions.
    - All persona count_percent values MUST sum to exactly 100.
-3. Identify 3 to 7 important correlations between questions \
-(e.g., higher education → higher awareness on Q13).
+3. Identify 3 to 7 important correlations between questions.
 
 Return ONLY a JSON object with this schema (no markdown, no explanation):
 {{
   "topic_summary": "2-3 sentences describing what the research tells us about this population",
-  "demographic_distribution": {{
-    "Q1": {{"<exact option text>": <integer percent>, ...}},
-    "Q2": {{}},
-    "Q3": {{}},
-    "Q4": {{}},
-    "Q5": {{}},
-    "Q6": {{}}
-  }},
   "question_distributions": {{
-    "Q7": {{"<exact option text>": <integer percent>, ...}},
-    "Q8": {{}},
-    "Q9": {{}},
-    "Q10": {{}},
-    "Q11": {{}},
-    "Q12": {{}},
-    "Q13": {{}},
-    "Q14": {{}},
-    "Q15": {{}},
-    "Q16": {{}},
-    "Q17": {{}},
-    "Q18": {{}},
-    "Q19": {{}},
-    "Q20": {{}},
-    "Q21": {{}},
-    "Q22": {{}},
-    "Q23": {{}},
-    "Q24": {{}},
-    "Q25": {{}},
-    "Q26": {{}},
-    "Q27": {{}},
-    "Q28": {{}}
+{qd_template}
   }},
   "suggested_personas": [
     {{
@@ -334,7 +325,7 @@ Return ONLY a JSON object with this schema (no markdown, no explanation):
       "description": "2-3 sentence description of this archetype's profile and behaviors",
       "count_percent": <integer>,
       "archetype_traits": ["trait 1", "trait 2", "trait 3"],
-      "routing_answer": "<exact Q6 option text>"
+      "routing_answer": "<exact option text for the routing question if the form has routing rules above, otherwise null>"
     }}
   ],
   "correlation_rules": [
@@ -344,7 +335,9 @@ Return ONLY a JSON object with this schema (no markdown, no explanation):
       "then": {{"<question_id>": {{"<option>": <integer percent>, ...}}}}
     }}
   ]
-}}"""
+}}
+
+LANGUAGE: Write all descriptive text values (topic_summary, persona name, persona description, correlation rule description) in Polish (język polski). JSON field names, question IDs, and option strings that appear verbatim in the survey questions MUST remain exactly as given."""
 
         completion = self._client.chat.completions.create(
             model=self._model,
@@ -366,6 +359,8 @@ Return ONLY a JSON object with this schema (no markdown, no explanation):
     def _step3_compile(self, research_basis: dict, research_analysis: dict) -> dict:
         config = self._config
         q_summary = _build_question_summary(config["questions"], config.get("routing", []))
+        all_qids = [q["id"] for q in config["questions"]]
+        has_routing = bool(config.get("routing"))
 
         prompt = f"""You are a survey methodology expert. Using the research basis and \
 analysis below, compile a complete JSON strategy for generating realistic synthetic survey \
@@ -382,24 +377,26 @@ SURVEY QUESTIONS (type and all valid option strings):
 
 Instructions:
 1. Flesh out each suggested persona into a complete persona entry with code (A, B, C, …), \
-name, count_percent, description, and routing (exact Q6 answer text).
+name, count_percent, description{", and routing (exact answer text for the routing question)" if has_routing else ""}.
 2. For each persona assign:
-   - fixed_attributes: questions where this persona ALWAYS gives the same single answer.
-     Typically Q1 (gender), Q2 (city size), Q4 (education) if stable for this archetype.
-     Also include Q6 here (the routing question).
+   - fixed_attributes: questions where this persona ALWAYS gives the same single answer \
+(typically stable demographic questions for this archetype){", plus the routing question" if has_routing else ""}.
    - weighted_answers: every other applicable non-fixed question, with exact option \
 strings as keys and integer weights that sum to exactly 100 per question.
+   - COMPLETENESS (critical): across fixed_attributes + weighted_answers, EVERY persona \
+MUST cover EVERY one of the {len(all_qids)} questions ({all_qids[0]} through {all_qids[-1]}), \
+including all grid_row questions — except questions skipped by routing for that persona. \
+Do not omit any question or stop early.
 3. Questions SKIPPED by routing for a persona MUST NOT appear in fixed_attributes or \
 weighted_answers (they will be submitted as null).
 4. All persona count_percent values MUST sum to exactly 100.
 5. When aggregated by count_percent, persona distributions should approximate the \
-demographic_distribution and question_distributions from the analysis.
+question_distributions from the analysis.
 
 Return ONLY a JSON object with this schema (no markdown, no explanation):
 {{
   "research_basis": [ ...copy from research basis... ],
   "topic_summary": "...",
-  "demographic_distribution": {{ ...copy from analysis... }},
   "question_distributions": {{ ...copy from analysis... }},
   "personas": [
     {{
@@ -407,7 +404,6 @@ Return ONLY a JSON object with this schema (no markdown, no explanation):
       "name": "persona name",
       "count_percent": <integer>,
       "description": "description",
-      "routing": "<exact Q6 option text>",
       "fixed_attributes": {{
         "<question_id>": "<exact option text>"
       }},
@@ -420,7 +416,9 @@ Return ONLY a JSON object with this schema (no markdown, no explanation):
     }}
   ],
   "correlation_rules": [ ...copy from analysis... ]
-}}"""
+}}
+
+LANGUAGE: Write all descriptive text values (topic_summary, persona name, persona description, correlation rule description) in Polish (język polski). JSON field names, question IDs, and option strings that appear verbatim in the survey questions MUST remain exactly as given."""
 
         completion = self._client.chat.completions.create(
             model=self._model,

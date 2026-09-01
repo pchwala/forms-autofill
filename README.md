@@ -1,18 +1,28 @@
 # Forms Autofill
 
-An AI-powered tool that automatically fills Google Forms with realistic, randomized responses. It extracts form fields, generates a response strategy via OpenAI, synthesizes answers, and submits them via requests.
+An AI-powered tool that automatically fills Google Forms with realistic, randomised responses. Targeted at Polish-speaking users. Anyone can use the site anonymously — a free preview shows the generated respondent personas and predicted answer distributions before any credits are spent.
 
 ## Architecture
 
-- **Backend** — FastAPI (Python 3.12), OpenAI API, Firebase Admin (auth)
-- **Frontend** — React 19 + Vite, Material UI, Firebase Auth (Google Sign-In)
+- **Backend** — FastAPI (Python 3.12), OpenAI API, Firebase Admin (auth + Firestore)
+- **Frontend** — React 19 + Vite, Material UI (dark theme), Firebase Auth (anonymous + Google Sign-In), Polish UI
+
+## Product flow
+
+| Phase | Steps | Cost |
+|-------|-------|------|
+| **Preview** (free) | 1 Extract form · 2 Generate strategy | Free |
+| **Submit** (paid) | 3 Generate responses · 4 Shuffle · 5 Submit | 1 credit per submitted response |
+
+You can bypass payment by changing credits in Firestore. I am working on making the project able to run fully local.
+Users can review generated personas and predicted answer distributions before committing any credits.
 
 ## Prerequisites
 
 - Python 3.12+
 - Node.js 18+
 - An [OpenAI API key](https://platform.openai.com/api-keys)
-- A Firebase project *(optional — can be bypassed in local dev)*
+- A Firebase project with **Anonymous Auth** and **Google Sign-In** enabled, and a Firestore database *(required — auth and credits are always on)*
 
 ---
 
@@ -32,43 +42,34 @@ cd forms-autofill
 #### Install Python dependencies
 
 ```bash
-cd backend
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
 ```
 
 #### Configure environment
 
-Create `backend/.env` (copy from the example):
-
-```bash
-cp backend/.env.example backend/.env
-```
-
-Edit `backend/.env` and set your OpenAI key and Firebase credentials:
+Create `backend/.env`:
 
 ```dotenv
-# Your OpenAI API key
+# Required
 OPENAI_API_KEY=sk-...
+FIREBASE_CREDENTIALS_JSON=./backend/firebase_credentials.json
 
-# Allow requests from the Vite dev server
+# Optional
 CORS_ORIGINS=http://localhost:5173
-
-# Firebase Admin credentials — file path or raw JSON
-FIREBASE_CREDENTIALS_JSON=./firebase_credentials.json
 ```
 
-> **Firebase credentials** (`FIREBASE_CREDENTIALS_JSON`) are required — auth is always enabled, including in local dev.
+`FIREBASE_CREDENTIALS_JSON` accepts either a file path to your service account JSON or the raw JSON string itself. Download the service account key from **Firebase Console → Project Settings → Service Accounts**.
 
 #### Run the backend
 
 ```bash
-# From the project root
+# From the project root (backend is a package)
 uvicorn backend.main:app --reload --port 8000
 ```
 
-The API will be available at `http://localhost:8000`. Interactive docs at `http://localhost:8000/docs`.
+API available at `http://localhost:8000`. Interactive docs at `http://localhost:8000/docs`.
 
 ---
 
@@ -83,19 +84,12 @@ npm install
 
 #### Configure environment
 
-Create `frontend/.env.development` (copy from the example):
-
-```bash
-cp frontend/.env.example frontend/.env.development
-```
-
-Edit `frontend/.env.development`:
+Create `frontend/.env.development`:
 
 ```dotenv
-# Backend URL
 VITE_API_URL=http://localhost:8000
 
-# Firebase config (required — auth is always enabled)
+# Firebase web app config (from Firebase Console → Project Settings → Your apps)
 VITE_FIREBASE_API_KEY=
 VITE_FIREBASE_AUTH_DOMAIN=
 VITE_FIREBASE_PROJECT_ID=
@@ -108,19 +102,17 @@ VITE_FIREBASE_APP_ID=
 npm run dev
 ```
 
-The app will be available at `http://localhost:5173`.
+App available at `http://localhost:5173`.
 
 ---
 
-## Pipeline Overview
+## Firebase setup checklist
 
-| Step | Description |
-|------|-------------|
-| 1 | **Extract** — scrapes Google Form fields and options |
-| 2 | **Strategy** — uses OpenAI to generate a plausible respondent profile |
-| 3 | **Generate** — produces answer sets from the strategy |
-| 4 | **Shuffle** — randomises response order |
-| 5 | **Submit** — submits each response via requests |
+1. Create a Firebase project at [console.firebase.google.com](https://console.firebase.google.com).
+2. **Authentication → Sign-in method**: enable **Anonymous** and **Google**.
+3. **Firestore Database**: create a database (start in production mode is fine).
+4. **Project Settings → Service Accounts**: generate a new private key and save it as `backend/firebase_credentials.json` (gitignored).
+5. **Project Settings → Your apps**: add a Web app and copy the config into `frontend/.env.development`.
 
 ---
 
